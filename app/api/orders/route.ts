@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
-import { getProduct, WILAYAS, DELIVERY_FEE, MAX_QTY } from "@/lib/data";
+import { WILAYAS, DELIVERY_FEE, MAX_QTY } from "@/lib/data";
+import { getProduct } from "@/lib/products";
 
 const hits = new Map<string, number[]>(); // anti-spam simple: 5 commandes / 10 min / IP
 const clean = (s: unknown, max: number) => String(s ?? "").replace(/[;\r\n\t]+/g, " ").trim().slice(0, max);

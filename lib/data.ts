@@ -44,11 +44,12 @@ export type Product = {
     hex: string;
   }[];
   sizes: string[];
+  active: boolean;
 };
 
 const SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 
-export const PRODUCTS: Product[] = [
+export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: "camo-baggy",
     name: "Camo Baggy",
@@ -81,6 +82,7 @@ export const PRODUCTS: Product[] = [
     ],
 
     sizes: SIZES,
+    active: true,
   },
 
   {
@@ -106,8 +108,6 @@ export const PRODUCTS: Product[] = [
     ],
 
     sizes: SIZES,
+    active: true,
   },
 ];
-
-export const getProduct = (id: string) =>
-  PRODUCTS.find((p) => p.id === id);

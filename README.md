@@ -5,7 +5,7 @@ Next.js 14 + SQLite. Pas de compte client. Commande → base locale → export C
 ## Lancer
 ```bash
 npm install
-cp .env.example .env      # puis changer ADMIN_PASSWORD
+cp .env.example .env      # puis remplacer ADMIN_PASSWORD par une valeur aléatoire longue
 npm run dev               # http://localhost:3010
 ```
 Production : `npm run build && npm start` sur un VPS (le dossier `data/` doit être persistant ;
@@ -18,7 +18,11 @@ Production : `npm run build && npm start` sur un VPS (le dossier `data/` doit ê
   `prix` = articles × quantité + 8 DT, pré-rempli : l'employé le vérifie avant l'import Navex.
 
 ## Modifier le catalogue
-`lib/data.ts` : produits, couleurs, tailles, frais (`DELIVERY_FEE`), quantité max (`MAX_QTY`).
+Depuis `/admin`, ajouter ou modifier les produits, leurs prix, images, couleurs et tailles,
+ou les activer/désactiver. Les produits sont stockés dans SQLite et les produits d'origine
+sont migrés automatiquement au premier démarrage.
+`lib/data.ts` contient uniquement les constantes de commande, les gouvernorats et les données
+de migration initiale, ainsi que les frais (`DELIVERY_FEE`) et la quantité max (`MAX_QTY`).
 Mettre les photos dans `public/products/` (remplacer les `.svg` provisoires).
 Les 24 gouvernorats utilisent l'orthographe exacte de Navex.
 

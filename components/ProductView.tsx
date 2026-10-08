@@ -6,7 +6,6 @@ import Image from "next/image";
 
 import {
   Product,
-  PRODUCTS,
   WILAYAS,
   DELIVERY_FEE,
   MAX_QTY,
@@ -16,8 +15,10 @@ import { useI18n } from "./I18n";
 
 export default function ProductView({
   p,
+  products,
 }: {
   p: Product;
+  products: Product[];
 }) {
   const { t, lang } = useI18n();
 
@@ -33,7 +34,7 @@ export default function ProductView({
   const total = p.price * qty + DELIVERY_FEE;
 
   const relatedProducts = useMemo(() => {
-    const sameCategory = PRODUCTS.filter(
+    const sameCategory = products.filter(
       (product) =>
         product.id !== p.id &&
         product.category === p.category
@@ -43,14 +44,14 @@ export default function ProductView({
       return sameCategory.slice(0, 4);
     }
 
-    const others = PRODUCTS.filter(
+    const others = products.filter(
       (product) =>
         product.id !== p.id &&
         product.category !== p.category
     );
 
     return [...sameCategory, ...others].slice(0, 4);
-  }, [p.id, p.category]);
+  }, [p.id, p.category, products]);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -58,9 +59,10 @@ export default function ProductView({
     setBusy(true);
     setErr("");
 
-    const f = Object.fromEntries(
-      new FormData(e.currentTarget)
-    );
+    const f: Record<string, FormDataEntryValue> = {};
+    new FormData(e.currentTarget).forEach((value, key) => {
+      f[key] = value;
+    });
 
     try {
       const r = await fetch("/api/orders", {

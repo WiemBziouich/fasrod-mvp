@@ -4,10 +4,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { useMemo, useState } from "react";
 
-import { PRODUCTS } from "@/lib/data";
+import { Product } from "@/lib/data";
 import { useI18n } from "./I18n";
 
-export default function ProductGrid() {
+export default function ProductGrid({ products }: { products: Product[] }) {
   const { t } = useI18n();
 
   const [search, setSearch] = useState("");
@@ -16,10 +16,10 @@ export default function ProductGrid() {
     const value = search.trim().toLowerCase();
 
     if (!value) {
-      return PRODUCTS;
+      return products;
     }
 
-    return PRODUCTS.filter((product) => {
+    return products.filter((product) => {
       return (
         product.name.toLowerCase().includes(value) ||
         product.category.toLowerCase().includes(value) ||
@@ -27,7 +27,7 @@ export default function ProductGrid() {
         product.desc.ar.toLowerCase().includes(value)
       );
     });
-  }, [search]);
+  }, [products, search]);
 
   return (
     <main className="wrap">

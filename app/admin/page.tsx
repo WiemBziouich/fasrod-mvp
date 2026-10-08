@@ -1,11 +1,16 @@
 import db from "@/lib/db";
+import { getProducts } from "@/lib/products";
+import AdminProducts from "@/components/AdminProducts";
 export const dynamic = "force-dynamic";
 
 export default function Admin() {
   const rows = db.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 200").all() as any[];
   const pending = rows.filter((o) => !o.exported_at).length;
+  const products = getProducts();
   return (
     <main className="wrap">
+      <AdminProducts initialProducts={products} />
+      <hr style={{ margin: "45px 0" }} />
       <h1>Commandes</h1>
       <p>
         <a className="btn" href="/api/admin/export">Exporter les {pending} nouvelles commandes (CSV Navex)</a>{" "}
