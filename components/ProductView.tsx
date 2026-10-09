@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, FormEvent } from "react";
+import { useEffect, useMemo, useState, FormEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -26,6 +26,26 @@ export default function ProductView({
   const [color, setColor] = useState(p.colors[0].name);
   const [size, setSize] = useState(p.sizes[0]);
   const [qty, setQty] = useState(1);
+  
+const selectedColor = p.colors.find((c) => c.name === color);
+
+const galleryImages =
+  selectedColor?.images?.length
+    ? selectedColor.images
+    : p.images?.length
+      ? p.images
+      : p.colors.flatMap((c) => c.images ?? []);
+
+useEffect(() => {
+  setImg(0);
+}, [color]);
+
+useEffect(() => {
+  if (img >= galleryImages.length) {
+    setImg(0);
+  }
+}, [img, galleryImages.length]);
+
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -138,7 +158,7 @@ export default function ProductView({
 
             <Image
               className="main"
-              src={p.images[img]}
+              src={galleryImages[img] || p.images[0]}
               alt={p.name}
               fill
               priority
@@ -149,7 +169,7 @@ export default function ProductView({
 
           <div className="thumbs">
 
-            {p.images.map((s, i) => (
+            {galleryImages.map((s, i) => (
 
               <button
                 key={s}

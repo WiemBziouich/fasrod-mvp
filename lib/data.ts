@@ -29,6 +29,12 @@ export const WILAYAS = [
   ["Zaghouan", "زغوان"],
 ].map(([v, ar]) => ({ v, ar }));
 
+export type ProductColor = {
+  name: string;
+  hex: string;
+  images?: string[];
+};
+
 export type Product = {
   id: string;
   name: string;
@@ -39,10 +45,7 @@ export type Product = {
     ar: string;
   };
   images: string[];
-  colors: {
-    name: string;
-    hex: string;
-  }[];
+  colors: ProductColor[];
   sizes: string[];
   active: boolean;
 };

@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { getProducts } from "@/lib/products";
@@ -33,24 +34,40 @@ function parseProduct(body: ProductInput) {
     ? body.images
         .filter((value): value is string => typeof value === "string")
         .map((value) => value.trim().slice(0, 1000))
-        .filter((value) => value.length > 0)
+        .filter(Boolean)
     : [];
 
   const colors = Array.isArray(body.colors)
     ? body.colors
-        .filter((value) => value && typeof value === "object")
+        .filter(
+          (value) =>
+            value !== null &&
+            typeof value === "object" &&
+            !Array.isArray(value)
+        )
         .map((value) => {
-          const color = value as { name?: unknown; hex?: unknown };
+          const color = value as {
+            name?: unknown;
+            hex?: unknown;
+            images?: unknown;
+          };
+
+          const colorImages = Array.isArray(color.images)
+            ? color.images
+                .filter(
+                  (image): image is string =>
+                    typeof image === "string"
+                )
+                .map((image) => image.trim().slice(0, 1000))
+                .filter(Boolean)
+            : [];
+
           return {
             name: text(color.name, 80),
             hex: text(color.hex, 7),
+            images: colorImages,
           };
         })
-        .filter(
-          (color) =>
-            color.name.length > 0 &&
-            /^#[0-9a-fA-F]{6}$/.test(color.hex)
-        )
     : [];
 
   const sizes = Array.isArray(body.sizes)
@@ -59,6 +76,9 @@ function parseProduct(body: ProductInput) {
         .map((value) => value.trim().slice(0, 20))
         .filter(Boolean)
     : [];
+
+  const validImage = (image: string) =>
+    image.startsWith("/") || /^https?:\/\//i.test(image);
 
   if (
     !/^[a-z0-9-]{2,80}$/.test(id) ||
@@ -70,14 +90,26 @@ function parseProduct(body: ProductInput) {
     price < 0 ||
     images.length === 0 ||
     images.length > 20 ||
-    images.some(
-      (image) =>
-        !image.startsWith("/") &&
-        !/^https?:\/\//i.test(image)
-    ) ||
+    images.some((image) => !validImage(image)) ||
     colors.length === 0 ||
+    colors.some(
+      (color) =>
+        !color.name ||
+        !/^#[0-9a-fA-F]{6}$/.test(color.hex) ||
+        color.images.length === 0 ||
+        color.images.length > 20 ||
+        color.images.some((image) => !validImage(image))
+    ) ||
     sizes.length === 0
   ) {
+    return null;
+  }
+
+  const uniqueColorNames = colors.map((color) =>
+    color.name.toLowerCase()
+  );
+
+  if (new Set(uniqueColorNames).size !== uniqueColorNames.length) {
     return null;
   }
 
@@ -151,7 +183,8 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "";
+    const message =
+      error instanceof Error ? error.message : "";
 
     if (message.includes("UNIQUE constraint failed")) {
       return NextResponse.json(
