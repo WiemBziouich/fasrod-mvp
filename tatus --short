@@ -1,0 +1,14 @@
+M	.env.example
+M	README.md
+M	app/admin/page.tsx
+A	app/api/admin/products/[id]/route.ts
+A	app/api/admin/products/route.ts
+M	app/api/orders/route.ts
+M	app/page.tsx
+M	app/produit/[id]/page.tsx
+A	components/AdminProducts.tsx
+M	components/ProductGrid.tsx
+M	components/ProductView.tsx
+M	lib/data.ts
+M	lib/db.ts
+A	lib/products.ts

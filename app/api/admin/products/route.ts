@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { getProducts } from "@/lib/products";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 type ProductInput = {
   id?: unknown;
   name?: unknown;
@@ -15,52 +18,153 @@ type ProductInput = {
   active?: unknown;
 };
 
-const text = (value: unknown, max: number) => String(value ?? "").trim().slice(0, max);
+const text = (value: unknown, max: number) =>
+  typeof value === "string" ? value.trim().slice(0, max) : "";
 
 function parseProduct(body: ProductInput) {
-  const id = text(body.id, 80).toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, "");
+  const id = text(body.id, 80);
   const name = text(body.name, 120);
   const category = text(body.category, 80);
-  const descFr = text(body.descFr, 500);
-  const descAr = text(body.descAr, 500);
+  const descFr = text(body.descFr, 2000);
+  const descAr = text(body.descAr, 2000);
   const price = Number(body.price);
-  const images = Array.isArray(body.images) ? body.images.map((v) => text(v, 500)).filter(Boolean) : [];
-  const colors = Array.isArray(body.colors)
-    ? body.colors.map((c) => ({ name: text(c?.name, 80), hex: text(c?.hex, 20) })).filter((c) => c.name && /^#[0-9a-f]{6}$/i.test(c.hex))
-    : [];
-  const sizes = Array.isArray(body.sizes) ? body.sizes.map((v) => text(v, 20)).filter(Boolean) : [];
 
-  if (!id || !name || !category || !descFr || !descAr || !Number.isInteger(price) || price < 0
-      || !images.length || !colors.length || !sizes.length) {
+  const images = Array.isArray(body.images)
+    ? body.images
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim().slice(0, 1000))
+        .filter((value) => value.length > 0)
+    : [];
+
+  const colors = Array.isArray(body.colors)
+    ? body.colors
+        .filter((value) => value && typeof value === "object")
+        .map((value) => {
+          const color = value as { name?: unknown; hex?: unknown };
+          return {
+            name: text(color.name, 80),
+            hex: text(color.hex, 7),
+          };
+        })
+        .filter(
+          (color) =>
+            color.name.length > 0 &&
+            /^#[0-9a-fA-F]{6}$/.test(color.hex)
+        )
+    : [];
+
+  const sizes = Array.isArray(body.sizes)
+    ? body.sizes
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim().slice(0, 20))
+        .filter(Boolean)
+    : [];
+
+  if (
+    !/^[a-z0-9-]{2,80}$/.test(id) ||
+    !name ||
+    !category ||
+    !descFr ||
+    !descAr ||
+    !Number.isSafeInteger(price) ||
+    price < 0 ||
+    images.length === 0 ||
+    images.length > 20 ||
+    images.some(
+      (image) =>
+        !image.startsWith("/") &&
+        !/^https?:\/\//i.test(image)
+    ) ||
+    colors.length === 0 ||
+    sizes.length === 0
+  ) {
     return null;
   }
-  return { id, name, category, price, descFr, descAr, images, colors, sizes, active: body.active !== false };
+
+  return {
+    id,
+    name,
+    category,
+    price,
+    descFr,
+    descAr,
+    images,
+    colors,
+    sizes,
+    active: body.active !== false,
+  };
 }
 
 export async function GET() {
-  return NextResponse.json(getProducts());
+  try {
+    return NextResponse.json(getProducts());
+  } catch (error) {
+    console.error("GET products failed:", error);
+    return NextResponse.json(
+      { error: "database_error" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => null) as ProductInput | null;
-  const product = body && parseProduct(body);
-  if (!product) return NextResponse.json({ error: "invalid" }, { status: 400 });
+  let body: ProductInput;
 
   try {
-    db.prepare(`INSERT INTO products
-      (id, name, category, price, desc_fr, desc_ar, images, colors, sizes, active)
-      VALUES (@id, @name, @category, @price, @descFr, @descAr, @images, @colors, @sizes, @active)`).run({
+    body = (await req.json()) as ProductInput;
+  } catch {
+    return NextResponse.json(
+      { error: "invalid_json" },
+      { status: 400 }
+    );
+  }
+
+  const product = parseProduct(body);
+
+  if (!product) {
+    return NextResponse.json(
+      { error: "invalid" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    db.prepare(`
+      INSERT INTO products (
+        id, name, category, price, desc_fr, desc_ar,
+        images, colors, sizes, active
+      )
+      VALUES (
+        @id, @name, @category, @price, @descFr, @descAr,
+        @images, @colors, @sizes, @active
+      )
+    `).run({
       ...product,
       images: JSON.stringify(product.images),
       colors: JSON.stringify(product.colors),
       sizes: JSON.stringify(product.sizes),
       active: product.active ? 1 : 0,
     });
+
+    return NextResponse.json(
+      { ok: true, id: product.id },
+      { status: 201 }
+    );
   } catch (error) {
-    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
-      return NextResponse.json({ error: "exists" }, { status: 409 });
+    const message = error instanceof Error ? error.message : "";
+
+    if (message.includes("UNIQUE constraint failed")) {
+      return NextResponse.json(
+        { error: "exists" },
+        { status: 409 }
+      );
     }
-    throw error;
+
+    console.error("POST product failed:", error);
+
+    return NextResponse.json(
+      { error: "database_error" },
+      { status: 500 }
+    );
   }
-  return NextResponse.json({ ok: true });
 }
