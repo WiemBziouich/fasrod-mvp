@@ -17,6 +17,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS orders (
   exported_at TEXT
 )`);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS order_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    product_id TEXT NOT NULL,
+    product_name TEXT NOT NULL,
+    color TEXT NOT NULL,
+    size TEXT NOT NULL,
+    qty INTEGER NOT NULL CHECK (qty >= 1),
+    unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+    line_total INTEGER NOT NULL CHECK (line_total >= 0),
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_order_items_order_id
+    ON order_items(order_id);
+`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS products (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

@@ -3,9 +3,11 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useI18n } from "./I18n";
+import { useCart } from "./CartContext";
 
 export default function Header() {
   const { lang, setLang, t } = useI18n();
+  const { count } = useCart();
 
   return (
     <header className="hdr">
@@ -31,6 +33,10 @@ export default function Header() {
 
           <Link href="/" className="home-link">
             {t("shop")}
+          </Link>
+
+          <Link href="/panier" className="home-link">
+            Panier ({count})
           </Link>
 
           <button

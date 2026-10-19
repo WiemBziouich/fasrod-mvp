@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 import { I18nProvider } from "@/components/I18n";
+import { CartProvider } from "@/components/CartContext";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
@@ -20,13 +21,11 @@ export default function RootLayout({
     <html lang="fr">
       <body>
         <I18nProvider>
-
-          <Header />
-
-          {children}
-
-          <Footer />
-
+          <CartProvider>
+            <Header />
+            {children}
+            <Footer />
+          </CartProvider>
         </I18nProvider>
       </body>
     </html>

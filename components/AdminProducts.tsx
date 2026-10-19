@@ -29,6 +29,19 @@ const makeVariant = (): Variant => ({
   images: [],
 });
 
+function generateProductId(name: string) {
+  const slug = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 55);
+
+  const suffix = Math.random().toString(36).slice(2, 7);
+  return `${slug || "produit"}-${suffix}`;
+}
+
 const blank = (): FormState => ({
   id: "",
   name: "",
@@ -162,17 +175,17 @@ export default function AdminProducts({
     event.preventDefault();
     if (!form) return;
 
-    const id = form.id.trim().toLowerCase();
+    const editingExisting = products.some((p) => p.id === form.id);
+
+    const id = editingExisting
+      ? form.id
+      : generateProductId(form.name);
+
     const variants: ProductColor[] = form.variants.map((v) => ({
       name: v.name.trim(),
       hex: v.hex,
       images: v.images,
     }));
-
-    if (!/^[a-z0-9-]{2,80}$/.test(id)) {
-      setMessage("Identifiant invalide : lettres minuscules, chiffres et tirets.");
-      return;
-    }
 
     if (!form.name.trim() || !form.category.trim() || !form.descFr.trim() || !form.descAr.trim()) {
       setMessage("Complète le nom, la catégorie et les deux descriptions.");
@@ -189,6 +202,7 @@ export default function AdminProducts({
       variants.some((v) =>
         !v.name ||
         !/^#[0-9a-f]{6}$/i.test(v.hex) ||
+        !v.images ||
         v.images.length === 0
       )
     ) {
@@ -207,7 +221,7 @@ export default function AdminProducts({
       return;
     }
 
-    const images = Array.from(new Set(variants.flatMap((v) => v.images)));
+    const images = Array.from(new Set(variants.flatMap((v) => v.images || [])));
     const payload = {
       id,
       name: form.name.trim(),
@@ -362,11 +376,6 @@ export default function AdminProducts({
       {form && (
         <form onSubmit={save} style={{ display: "grid", gap: 14, maxWidth: 820, margin: "20px 0 32px", padding: 20, background: "#fafafa", border: "1px solid #e7e5e4", borderRadius: 12 }}>
           <h3 style={{ margin: 0 }}>{products.some((p) => p.id === form.id) ? "Modifier le produit" : "Nouveau produit"}</h3>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            Identifiant unique
-            <input required disabled={products.some((p) => p.id === form.id)} style={inputStyle} placeholder="hoodie-noir" value={form.id} onChange={(e) => update("id", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} />
-          </label>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
             <label style={{ display: "grid", gap: 6 }}>Nom

@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState, FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 
 import {
   Product,
-  WILAYAS,
-  DELIVERY_FEE,
   MAX_QTY,
 } from "@/lib/data";
 
 import { useI18n } from "./I18n";
+import { useCart } from "./CartContext";
 
 export default function ProductView({
   p,
@@ -21,6 +20,8 @@ export default function ProductView({
   products: Product[];
 }) {
   const { t, lang } = useI18n();
+  const { addItem } = useCart();
+  const [cartMessage, setCartMessage] = useState("");
 
   const [img, setImg] = useState(0);
   const [color, setColor] = useState(p.colors[0].name);
@@ -46,13 +47,6 @@ useEffect(() => {
   }
 }, [img, galleryImages.length]);
 
-
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [done, setDone] = useState<number | null>(null);
-
-  const total = p.price * qty + DELIVERY_FEE;
-
   const relatedProducts = useMemo(() => {
     const sameCategory = products.filter(
       (product) =>
@@ -72,71 +66,6 @@ useEffect(() => {
 
     return [...sameCategory, ...others].slice(0, 4);
   }, [p.id, p.category, products]);
-
-  async function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
-    setBusy(true);
-    setErr("");
-
-    const f: Record<string, FormDataEntryValue> = {};
-    new FormData(e.currentTarget).forEach((value, key) => {
-      f[key] = value;
-    });
-
-    try {
-      const r = await fetch("/api/orders", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...f,
-          productId: p.id,
-          color,
-          size,
-          qty,
-        }),
-      });
-
-      const d = await r.json();
-
-      if (d.ok) {
-        setDone(d.id);
-      } else {
-        setErr(t("e_" + d.error));
-      }
-    } catch {
-      setErr(t("e_net"));
-    }
-
-    setBusy(false);
-  }
-
-  if (done !== null) {
-    return (
-      <main className="wrap ok">
-
-        <div className="success-icon">
-          ✓
-        </div>
-
-        <h1>
-          {t("okTitle")}
-        </h1>
-
-        <p>
-          {t("okText")}{" "}
-          <b>#{done}</b>
-        </p>
-
-        <Link className="btn" href="/">
-          {t("again")}
-        </Link>
-
-      </main>
-    );
-  }
 
   return (
     <main className="wrap">
@@ -311,137 +240,43 @@ useEffect(() => {
 
           </div>
 
-          {/* FORM */}
+          <div className="form">
+            <h2>Ajouter au panier</h2>
 
-          <form
-            onSubmit={submit}
-            className="form"
-          >
-
-            <h2>
-              {t("formTitle")}
-            </h2>
-
-            <input
-              name="website"
-              tabIndex={-1}
-              autoComplete="off"
-              className="hp"
-              aria-hidden
-            />
-
-            <input
-              name="name"
-              required
-              minLength={3}
-              placeholder={t("name")}
-              autoComplete="name"
-            />
-
-            <input
-              name="phone"
-              required
-              type="tel"
-              inputMode="tel"
-              placeholder={t("phone")}
-              autoComplete="tel"
-            />
-
-            <input
-              name="phone2"
-              type="tel"
-              inputMode="tel"
-              placeholder={t("phone2")}
-            />
-
-            <select
-              name="governorate"
-              required
-              defaultValue=""
-            >
-              <option
-                value=""
-                disabled
-              >
-                {t("wilaya")}
-              </option>
-
-              {WILAYAS.map((w) => (
-                <option
-                  key={w.v}
-                  value={w.v}
-                >
-                  {lang === "ar"
-                    ? w.ar
-                    : w.v}
-                </option>
-              ))}
-            </select>
-
-            <input
-              name="city"
-              required
-              placeholder={t("city")}
-            />
-
-            <textarea
-              name="address"
-              required
-              rows={2}
-              placeholder={t("address")}
-            />
-
-            <div className="sum">
-
-              <span>
-                {p.name} × {qty}
-              </span>
-
-              <span>
-                {p.price * qty} DT
-              </span>
-
-              <span>
-                {t("delivery")}{" "}
-                <small className="muted">
-                  ({t("deliveryNote")})
-                </small>
-              </span>
-
-              <span>
-                {DELIVERY_FEE} DT
-              </span>
-
-              <b>
-                {t("total")}
-              </b>
-
-              <b>
-                {total} DT
-              </b>
-
-            </div>
-
-            <p className="muted">
-              {t("cod")}
+            <p>
+              {p.name} × {qty} — {p.price * qty} DT
             </p>
 
-            {err && (
-              <p className="err">
-                {err}
+            <p className="muted">
+              Les frais de livraison seront ajoutés une seule fois lors de la validation.
+            </p>
+
+            {cartMessage && (
+              <p role="status" className="muted">
+                {cartMessage}
               </p>
             )}
 
             <button
+              type="button"
               className="btn big"
-              disabled={busy}
+              onClick={() => {
+                addItem({
+                  productId: p.id,
+                  color,
+                  size,
+                  qty,
+                });
+                setCartMessage("Article ajouté au panier.");
+              }}
             >
-              {busy
-                ? t("sending")
-                : t("submit")}
+              Ajouter au panier
             </button>
 
-          </form>
+            <Link href="/panier" className="btn big">
+              Voir le panier
+            </Link>
+          </div>
 
         </div>
 
