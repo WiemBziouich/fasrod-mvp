@@ -16,7 +16,7 @@ const clean = (value: unknown, max: number) =>
 
 const phoneOf = (value: unknown) => {
   const digits = String(value ?? "")
-    .replace(/[\s.-]/g, "")
+    .replace(/[\s.\-_/()]+/g, "")
     .replace(/^(\+216|00216)/, "");
   return /^\d{8}$/.test(digits) ? digits : null;
 };

@@ -98,7 +98,7 @@ const D: Record<
       "Voir tout",
 
     e_phone:
-      "Numéro invalide : 8 chiffres (ex: 52 123 456).",
+      "Numéro invalide : 8 chiffres (ex: 12 345 678).",
 
     e_fields:
       "Vérifie ton nom, ta wilaya, ta ville et ton adresse.",
@@ -211,7 +211,7 @@ const D: Record<
       "شوف الكل",
 
     e_phone:
-      "النمرة غالطة: 8 أرقام (مثال: 52 123 456).",
+      "النمرة غالطة: 8 أرقام (مثال: 12 345 678).",
 
     e_fields:
       "ثبّت في الاسم والولاية والمدينة والعنوان.",
