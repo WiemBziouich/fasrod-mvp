@@ -56,7 +56,7 @@ export default function Footer() {
           <h3>Suivez-nous</h3>
 
           <a
-            href="https://www.instagram.com/"
+            href="https://www.instagram.com/fasrord/"
             target="_blank"
             rel="noreferrer"
           >

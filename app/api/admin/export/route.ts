@@ -10,16 +10,42 @@ const cell = (v: unknown) => {
 
 export async function GET(req: NextRequest) {
   const all = req.nextUrl.searchParams.get("all") === "1";
-  const rows = db.prepare(`SELECT * FROM orders ${all ? "" : "WHERE exported_at IS NULL"} ORDER BY id`).all() as any[];
-  const header = "destinataire_nom;adresse;ville;gouvernerat;telephone;telephone2;nombre_de_colis;prix;designation";
+  const result = await db.execute(
+    `SELECT * FROM orders ${all ? "" : "WHERE exported_at IS NULL"} ORDER BY id`
+  );
+  const rows = result.rows as unknown as any[];
+  const header =
+    "destinataire_nom;adresse;ville;gouvernerat;telephone;telephone2;nombre_de_colis;prix;designation";
   const lines = rows.map((o) =>
-    [o.name, o.address, o.city, o.governorate, o.phone, o.phone2, 1, o.total, o.designation].map(cell).join(";"));
+    [
+      o.name,
+      o.address,
+      o.city,
+      o.governorate,
+      o.phone,
+      o.phone2,
+      1,
+      o.total,
+      o.designation,
+    ]
+      .map(cell)
+      .join(";")
+  );
+
   if (!all && rows.length) {
-    const mark = db.prepare("UPDATE orders SET exported_at = datetime('now') WHERE id = ?");
-    db.transaction(() => rows.forEach((o) => mark.run(o.id)))();
+    for (const o of rows) {
+      await db.execute({
+        sql: "UPDATE orders SET exported_at = datetime('now') WHERE id = ?",
+        args: [o.id],
+      });
+    }
   }
+
   const date = new Date().toISOString().slice(0, 10);
   return new Response([header, ...lines].join("\r\n"), {
-    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="commandes-${date}.csv"` },
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="commandes-${date}.csv"`,
+    },
   });
 }

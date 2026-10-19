@@ -18,10 +18,9 @@ type Order = {
   exported_at: string | null;
 };
 
-export default function AdminOrdersPage() {
-  const rows = db
-    .prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 200")
-    .all() as Order[];
+export default async function AdminOrdersPage() {
+  const result = await db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 200");
+  const rows = result.rows as unknown as Order[];
 
   const pending = rows.filter((order) => !order.exported_at).length;
 

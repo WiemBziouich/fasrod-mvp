@@ -1,1 +1,13 @@
-module.exports = { experimental: { serverComponentsExternalPackages: ['better-sqlite3'] } };
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+      },
+    ],
+  },
+};
+
+module.exports = nextConfig;

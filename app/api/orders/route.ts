@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const hits = new Map<string, number[]>();
+const phoneHits = new Map<string, number[]>();
 
 const clean = (value: unknown, max: number) =>
   String(value ?? "")
@@ -32,9 +33,10 @@ export async function POST(req: NextRequest) {
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local";
   const now = Date.now();
-  const recent = (hits.get(ip) || []).filter((time) => now - time < 600_000);
+  // Seuil IP large (120 req/10 min) pour supporter les réseaux 4G tunisiens partagés (CGNAT)
+  const recentIp = (hits.get(ip) || []).filter((time) => now - time < 600_000);
 
-  if (recent.length >= 5) {
+  if (recentIp.length >= 120) {
     return NextResponse.json({ error: "rate" }, { status: 429 });
   }
 
@@ -59,6 +61,12 @@ export async function POST(req: NextRequest) {
 
   if (!phone || !phone2) {
     return NextResponse.json({ error: "phone" }, { status: 400 });
+  }
+
+  // Protection anti-doublon / spam par numéro : max 4 commandes par numéro en 10 minutes
+  const recentPhone = (phoneHits.get(phone) || []).filter((time) => now - time < 600_000);
+  if (recentPhone.length >= 4) {
+    return NextResponse.json({ error: "rate" }, { status: 429 });
   }
 
   const name = clean(body.name, 80);
@@ -98,7 +106,7 @@ export async function POST(req: NextRequest) {
     }
     seen.add(uniqueKey);
 
-    const product = getProduct(productId, true);
+    const product = await getProduct(productId, true);
 
     if (!product) {
       return NextResponse.json({ error: "unavailable" }, { status: 400 });
@@ -129,59 +137,65 @@ export async function POST(req: NextRequest) {
     .join(" + ");
 
   try {
-    const createOrder = db.transaction(() => {
-      // Colonnes historiques conservées pour compatibilité.
+    const tx = await db.transaction();
+    try {
       const first = items[0];
-
-      const result = db.prepare(`
-        INSERT INTO orders (
-          name, address, city, governorate, phone, phone2,
-          product_id, designation, qty, item_price, delivery_fee, total
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        name,
-        address,
-        city,
-        governorate,
-        phone,
-        phone2,
-        first.productId,
-        designation,
-        items.reduce((sum, item) => sum + item.qty, 0),
-        subtotal,
-        DELIVERY_FEE,
-        total
-      );
+      const result = await tx.execute({
+        sql: `
+          INSERT INTO orders (
+            name, address, city, governorate, phone, phone2,
+            product_id, designation, qty, item_price, delivery_fee, total
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        args: [
+          name,
+          address,
+          city,
+          governorate,
+          phone,
+          phone2,
+          first.productId,
+          designation,
+          items.reduce((sum, item) => sum + item.qty, 0),
+          subtotal,
+          DELIVERY_FEE,
+          total,
+        ],
+      });
 
       const orderId = Number(result.lastInsertRowid);
 
-      const insertItem = db.prepare(`
-        INSERT INTO order_items (
-          order_id, product_id, product_name, color, size,
-          qty, unit_price, line_total
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
       for (const item of items) {
-        insertItem.run(
-          orderId,
-          item.productId,
-          item.productName,
-          item.color,
-          item.size,
-          item.qty,
-          item.unitPrice,
-          item.lineTotal
-        );
+        await tx.execute({
+          sql: `
+            INSERT INTO order_items (
+              order_id, product_id, product_name, color, size,
+              qty, unit_price, line_total
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          args: [
+            orderId,
+            item.productId,
+            item.productName,
+            item.color,
+            item.size,
+            item.qty,
+            item.unitPrice,
+            item.lineTotal,
+          ],
+        });
       }
 
-      return orderId;
-    });
+      await tx.commit();
 
-    const id = createOrder();
-    hits.set(ip, [...recent, now]);
+      hits.set(ip, [...recentIp, now]);
+      phoneHits.set(phone, [...recentPhone, now]);
 
-    return NextResponse.json({ ok: true, id, subtotal, deliveryFee: DELIVERY_FEE, total });
+      return NextResponse.json({ ok: true, id: orderId, subtotal, deliveryFee: DELIVERY_FEE, total });
+    } catch (err) {
+      await tx.rollback();
+      throw err;
+    }
   } catch (error) {
     console.error("Order creation failed:", error);
     return NextResponse.json({ error: "order_failed" }, { status: 500 });

@@ -148,28 +148,35 @@ export async function PUT(
   }
 
   try {
-    const result = db.prepare(`
-      UPDATE products SET
-        name = @name,
-        category = @category,
-        price = @price,
-        desc_fr = @descFr,
-        desc_ar = @descAr,
-        images = @images,
-        colors = @colors,
-        sizes = @sizes,
-        active = @active
-      WHERE id = @id
-    `).run({
-      ...product,
-      id: params.id,
-      images: JSON.stringify(product.images),
-      colors: JSON.stringify(product.colors),
-      sizes: JSON.stringify(product.sizes),
-      active: product.active ? 1 : 0,
+    const result = await db.execute({
+      sql: `
+        UPDATE products SET
+          name = ?,
+          category = ?,
+          price = ?,
+          desc_fr = ?,
+          desc_ar = ?,
+          images = ?,
+          colors = ?,
+          sizes = ?,
+          active = ?
+        WHERE id = ?
+      `,
+      args: [
+        product.name,
+        product.category,
+        product.price,
+        product.descFr,
+        product.descAr,
+        JSON.stringify(product.images),
+        JSON.stringify(product.colors),
+        JSON.stringify(product.sizes),
+        product.active ? 1 : 0,
+        params.id,
+      ],
     });
 
-    if (!result.changes) {
+    if (result.rowsAffected === 0) {
       return NextResponse.json(
         { error: "not_found" },
         { status: 404 }
@@ -192,11 +199,12 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const result = db
-      .prepare("DELETE FROM products WHERE id = ?")
-      .run(params.id);
+    const result = await db.execute({
+      sql: "DELETE FROM products WHERE id = ?",
+      args: [params.id],
+    });
 
-    if (!result.changes) {
+    if (result.rowsAffected === 0) {
       return NextResponse.json(
         { error: "not_found" },
         { status: 404 }

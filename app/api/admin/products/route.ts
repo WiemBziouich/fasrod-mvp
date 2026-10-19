@@ -129,7 +129,7 @@ function parseProduct(body: ProductInput) {
 
 export async function GET() {
   try {
-    return NextResponse.json(getProducts());
+    return NextResponse.json(await getProducts());
   } catch (error) {
     console.error("GET products failed:", error);
     return NextResponse.json(
@@ -161,21 +161,26 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    db.prepare(`
-      INSERT INTO products (
-        id, name, category, price, desc_fr, desc_ar,
-        images, colors, sizes, active
-      )
-      VALUES (
-        @id, @name, @category, @price, @descFr, @descAr,
-        @images, @colors, @sizes, @active
-      )
-    `).run({
-      ...product,
-      images: JSON.stringify(product.images),
-      colors: JSON.stringify(product.colors),
-      sizes: JSON.stringify(product.sizes),
-      active: product.active ? 1 : 0,
+    await db.execute({
+      sql: `
+        INSERT INTO products (
+          id, name, category, price, desc_fr, desc_ar,
+          images, colors, sizes, active
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      args: [
+        product.id,
+        product.name,
+        product.category,
+        product.price,
+        product.descFr,
+        product.descAr,
+        JSON.stringify(product.images),
+        JSON.stringify(product.colors),
+        JSON.stringify(product.sizes),
+        product.active ? 1 : 0,
+      ],
     });
 
     return NextResponse.json(

@@ -18,24 +18,29 @@ const mapProduct = (row: ProductRow): Product => ({
   id: row.id,
   name: row.name,
   category: row.category,
-  price: row.price,
+  price: Number(row.price),
   desc: { fr: row.desc_fr, ar: row.desc_ar },
-  images: JSON.parse(row.images),
-  colors: JSON.parse(row.colors),
-  sizes: JSON.parse(row.sizes),
+  images: typeof row.images === "string" ? JSON.parse(row.images) : (row.images || []),
+  colors: typeof row.colors === "string" ? JSON.parse(row.colors) : (row.colors || []),
+  sizes: typeof row.sizes === "string" ? JSON.parse(row.sizes) : (row.sizes || []),
   active: Boolean(row.active),
 });
 
-export const getProducts = (activeOnly = false) => {
-  const rows = db.prepare(
+export const getProducts = async (activeOnly = false): Promise<Product[]> => {
+  const result = await db.execute(
     `SELECT * FROM products ${activeOnly ? "WHERE active = 1" : ""} ORDER BY rowid`
-  ).all() as ProductRow[];
-  return rows.map(mapProduct);
+  );
+  return (result.rows as unknown as ProductRow[]).map(mapProduct);
 };
 
-export const getProduct = (id: string, activeOnly = true) => {
-  const row = db.prepare(
-    `SELECT * FROM products WHERE id = ? ${activeOnly ? "AND active = 1" : ""}`
-  ).get(id) as ProductRow | undefined;
+export const getProduct = async (
+  id: string,
+  activeOnly = true
+): Promise<Product | undefined> => {
+  const result = await db.execute({
+    sql: `SELECT * FROM products WHERE id = ? ${activeOnly ? "AND active = 1" : ""}`,
+    args: [id],
+  });
+  const row = result.rows[0] as unknown as ProductRow | undefined;
   return row ? mapProduct(row) : undefined;
 };
