@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import db from "@/lib/db";
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Anti-injection de formules Excel + retrait des ';' et retours ligne
