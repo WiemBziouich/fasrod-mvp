@@ -1,6 +1,11 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import type { Product, ProductColor } from "@/lib/data";
 
 type Variant = {
@@ -93,6 +98,36 @@ export default function AdminProducts({
   initialProducts: Product[];
 }) {
   const [products, setProducts] = useState(initialProducts);
+  useEffect(() => {
+  let cancelled = false;
+
+  async function loadProducts() {
+    try {
+      const response = await fetch("/api/admin/products", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+
+      if (!response.ok) {
+        throw new Error("Impossible de charger les produits.");
+      }
+
+      const data = await response.json();
+
+      if (!cancelled && Array.isArray(data)) {
+        setProducts(data);
+      }
+    } catch (error) {
+      console.error("Chargement des produits échoué :", error);
+    }
+  }
+
+  loadProducts();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
   const [form, setForm] = useState<FormState | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
