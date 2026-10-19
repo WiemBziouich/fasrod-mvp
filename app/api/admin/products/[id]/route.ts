@@ -11,6 +11,7 @@ type ProductInput = {
   price?: unknown;
   descFr?: unknown;
   descAr?: unknown;
+  desc?: unknown;
   images?: unknown;
   colors?: unknown;
   sizes?: unknown;
@@ -23,8 +24,16 @@ const text = (value: unknown, max: number) =>
 function parseProduct(body: ProductInput) {
   const name = text(body.name, 120);
   const category = text(body.category, 80);
-  const descFr = text(body.descFr, 2000);
-  const descAr = text(body.descAr, 2000);
+  const desc = (
+  body.desc !== null &&
+  typeof body.desc === "object" &&
+  !Array.isArray(body.desc)
+)
+  ? body.desc as { fr?: unknown; ar?: unknown }
+  : {};
+
+const descFr = text(body.descFr ?? desc.fr, 2000);
+const descAr = text(body.descAr ?? desc.ar, 2000);
   const price = Number(body.price);
 
   const images = Array.isArray(body.images)
