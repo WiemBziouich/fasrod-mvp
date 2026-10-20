@@ -55,7 +55,7 @@ const blank = (): FormState => ({
   descFr: "",
   descAr: "",
   variants: [{ ...makeVariant(), name: "Noir", hex: "#111111" }],
-  sizes: "S, M, L, XL",
+  sizes: "XS, S, M, L, XL, XXL",
   active: true,
 });
 
@@ -501,7 +501,8 @@ export default function AdminProducts({
           </div>
 
           <label style={{ display: "grid", gap: 6 }}>Tailles (séparées par des virgules)
-            <input required style={inputStyle} value={form.sizes} onChange={(e) => update("sizes", e.target.value)} placeholder="S, M, L, XL" />
+            <input required style={inputStyle} value={form.sizes} onChange={(e) => update("sizes", e.target.value)} placeholder="XS, S, M, L, XL, XXL" />
+            <small style={{ color: "#737373" }}>Guide : XS = 34 · S = 36 · M = 38 · L = 40 · XL = 42 · XXL = 44</small>
           </label>
 
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>

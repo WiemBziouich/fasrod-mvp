@@ -52,6 +52,15 @@ export type Product = {
 
 const SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 
+export const SIZE_GUIDE: Record<string, number> = {
+  XS: 34,
+  S: 36,
+  M: 38,
+  L: 40,
+  XL: 42,
+  XXL: 44,
+};
+
 export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: "camo-baggy",

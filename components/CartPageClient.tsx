@@ -3,6 +3,7 @@
 import { useMemo, useState, type FormEvent, type ChangeEvent } from "react";
 import Link from "next/link";
 import { DELIVERY_FEE, MAX_QTY, WILAYAS, type Product } from "@/lib/data";
+import { getDelegations } from "@/lib/tunisia-locations";
 import { useCart, cartKey } from "./CartContext";
 import { useI18n } from "./I18n";
 
@@ -55,8 +56,14 @@ export default function CartPageClient({ products }: { products: Product[] }) {
     phone2: "",
     governorate: "",
     city: "",
+    locality: "",
     address: "",
   });
+
+  const delegations = useMemo(
+    () => getDelegations(formValues.governorate),
+    [formValues.governorate]
+  );
 
   const productMap = useMemo(
     () => new Map(products.map((product) => [product.id, product])),
@@ -90,6 +97,12 @@ export default function CartPageClient({ products }: { products: Product[] }) {
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) {
     const { name, value } = e.target;
+
+    if (name === "governorate") {
+      setFormValues((prev) => ({ ...prev, governorate: value, city: "" }));
+      setFieldErrors((prev) => ({ ...prev, governorate: undefined, city: undefined }));
+      return;
+    }
 
     if (name === "phone" || name === "phone2") {
       const cleaned = cleanPhone(value);
@@ -187,6 +200,9 @@ export default function CartPageClient({ products }: { products: Product[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formValues,
+          address: formValues.locality.trim()
+            ? `${formValues.locality.trim()} — ${formValues.address.trim()}`
+            : formValues.address.trim(),
           items: items.map(({ productId, color, size, qty }) => ({
             productId,
             color,
@@ -261,10 +277,18 @@ export default function CartPageClient({ products }: { products: Product[] }) {
     const isCallingToday = currentHour >= 9 && currentHour < 18;
 
     const wilayaObj = WILAYAS.find((w) => w.v === completedOrder.governorate);
+    const delegationObj = getDelegations(completedOrder.governorate).find(
+      (delegation) => delegation.Value === completedOrder.city
+    );
     const wilayaDisplay =
       lang === "ar"
         ? wilayaObj?.ar || completedOrder.governorate
         : completedOrder.governorate;
+    const cityDisplay = delegationObj
+      ? lang === "ar"
+        ? delegationObj.NameAr
+        : delegationObj.Name
+      : completedOrder.city;
 
     return (
       <main className="wrap ok">
@@ -348,7 +372,7 @@ export default function CartPageClient({ products }: { products: Product[] }) {
 
           <div className="order-recap-row">
             <span className="muted">{lang === "ar" ? "التوصيل" : "Livraison"}</span>
-            <strong>{wilayaDisplay} — {completedOrder.city}</strong>
+            <strong>{wilayaDisplay} — {cityDisplay}</strong>
           </div>
 
           <div className="order-recap-row">
@@ -679,23 +703,32 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               )}
             </div>
 
-            {/* 5. VILLE / DÉLÉGATION */}
+            {/* 5. DÉLÉGATION FILTRÉE PAR GOUVERNORAT */}
             <div className="form-group">
               <label htmlFor="field-city" className="form-label">
                 <span>{lang === "ar" ? "المدينة / المعتمدية *" : "Ville / délégation *"}</span>
-                <span className="form-hint">{lang === "ar" ? "مثال: تونس، نابل..." : "Ex: Tunis, Nabeul..."}</span>
+                <span className="form-hint">{lang === "ar" ? "اختر المعتمدية" : "Choisissez d’abord votre gouvernorat"}</span>
               </label>
-              <input
+              <select
                 id="field-city"
                 name="city"
                 required
-                minLength={2}
-                maxLength={60}
                 value={formValues.city}
                 onChange={handleInputChange}
                 className={fieldErrors.city ? "input-error" : ""}
-                placeholder={lang === "ar" ? "مثال: تونس، نابل..." : "Ex: Tunis, Nabeul..."}
-              />
+                disabled={!formValues.governorate}
+              >
+                <option value="" disabled>
+                  {!formValues.governorate
+                    ? (lang === "ar" ? "— اختر الولاية أولاً —" : "— Choisir d’abord le gouvernorat —")
+                    : (lang === "ar" ? "— اختر المعتمدية —" : "— Sélectionner la délégation —")}
+                </option>
+                {delegations.map((delegation) => (
+                  <option key={delegation.Value} value={delegation.Value}>
+                    {lang === "ar" ? delegation.NameAr : delegation.Name}
+                  </option>
+                ))}
+              </select>
               {fieldErrors.city && (
                 <p role="alert" className="field-error-msg">
                   ⚠️ {fieldErrors.city}
@@ -703,7 +736,24 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               )}
             </div>
 
-            {/* 6. ADRESSE EXACTE */}
+            {/* 6. LOCALITÉ / QUARTIER FACULTATIF */}
+            <div className="form-group">
+              <label htmlFor="field-locality" className="form-label">
+                <span>{lang === "ar" ? "المنطقة / الحي (اختياري)" : "Localité / quartier (facultatif)"}</span>
+                <span className="form-hint">{lang === "ar" ? "مثال: حي النصر" : "Ex: Cité Ennasr"}</span>
+              </label>
+              <input
+                id="field-locality"
+                name="locality"
+                maxLength={80}
+                value={formValues.locality}
+                onChange={handleInputChange}
+                placeholder={lang === "ar" ? "مثال: حي النصر" : "Ex: Cité Ennasr"}
+                autoComplete="address-level3"
+              />
+            </div>
+
+            {/* 7. ADRESSE EXACTE */}
             <div className="form-group">
               <label htmlFor="field-address" className="form-label">
                 <span>{lang === "ar" ? "العنوان بالتفصيل *" : "Adresse complète *"}</span>
