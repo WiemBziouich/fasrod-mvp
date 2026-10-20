@@ -217,3 +217,4 @@ export default function ProductGrid({ products }: { products: Product[] }) {
     </main>
   );
 }
+
