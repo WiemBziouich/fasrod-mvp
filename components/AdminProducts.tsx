@@ -92,6 +92,13 @@ async function readResponse(response: Response) {
   return data;
 }
 
+function announceProductChange() {
+  if (typeof window === "undefined" || !("BroadcastChannel" in window)) return;
+  const channel = new BroadcastChannel("fasrod-products");
+  channel.postMessage({ changedAt: Date.now() });
+  channel.close();
+}
+
 export default function AdminProducts({
   initialProducts,
 }: {
@@ -305,6 +312,7 @@ export default function AdminProducts({
           ? current.map((p) => p.id === id ? updated : p)
           : [...current, updated]
       );
+      announceProductChange();
       setForm(null);
       setMessage("Produit enregistré.");
     } catch (error) {
@@ -346,6 +354,7 @@ export default function AdminProducts({
       setProducts((current) => current.map((p) =>
         p.id === product.id ? { ...p, active: !p.active } : p
       ));
+      announceProductChange();
       setMessage("Statut mis à jour.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Modification impossible.");
@@ -365,6 +374,7 @@ export default function AdminProducts({
       });
       await readResponse(response);
       setProducts((current) => current.filter((p) => p.id !== product.id));
+      announceProductChange();
       setMessage("Produit supprimé.");
       if (form?.id === product.id) setForm(null);
     } catch (error) {

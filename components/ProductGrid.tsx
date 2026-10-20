@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Product } from "@/lib/data";
 import { useI18n } from "./I18n";
@@ -10,16 +10,62 @@ import { useI18n } from "./I18n";
 export default function ProductGrid({ products }: { products: Product[] }) {
   const { t } = useI18n();
 
+  const [liveProducts, setLiveProducts] = useState(products);
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProducts() {
+      try {
+        const response = await fetch("/api/products", {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+        });
+
+        if (!response.ok) return;
+
+        const nextProducts = (await response.json()) as Product[];
+        if (!cancelled && Array.isArray(nextProducts)) {
+          setLiveProducts(nextProducts);
+        }
+      } catch (error) {
+        // Keep showing the last known catalogue if a refresh is temporarily unavailable.
+        console.error("Actualisation du catalogue échouée :", error);
+      }
+    }
+
+    const refresh = () => void loadProducts();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+
+    refresh();
+    const interval = window.setInterval(refresh, 5000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    let channel: BroadcastChannel | null = null;
+    if ("BroadcastChannel" in window) {
+      channel = new BroadcastChannel("fasrod-products");
+      channel.onmessage = refresh;
+    }
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      channel?.close();
+    };
+  }, []);
 
   const filteredProducts = useMemo(() => {
     const value = search.trim().toLowerCase();
 
     if (!value) {
-      return products;
+      return liveProducts;
     }
 
-    return products.filter((product) => {
+    return liveProducts.filter((product) => {
       return (
         product.name.toLowerCase().includes(value) ||
         product.category.toLowerCase().includes(value) ||
@@ -27,7 +73,7 @@ export default function ProductGrid({ products }: { products: Product[] }) {
         product.desc.ar.toLowerCase().includes(value)
       );
     });
-  }, [products, search]);
+  }, [liveProducts, search]);
 
   return (
     <main className="wrap">
