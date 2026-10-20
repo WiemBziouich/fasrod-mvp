@@ -2,6 +2,7 @@ import db from "@/lib/db";
 import AdminOrdersTable from "@/components/AdminOrdersTable";
 import AdminNav from "@/components/AdminNav";
 import OldExportedOrdersCleanup from "@/components/OldExportedOrdersCleanup";
+import ExportCsvButton from "@/components/ExportCsvButton";
 
 export const dynamic = "force-dynamic";
 
@@ -108,12 +109,12 @@ export default async function AdminOrdersPage() {
             {pending} à exporter
           </span>
 
-          <a className="btn" href="/api/admin/export">
+          <ExportCsvButton className="btn">
             Exporter CSV Navex
-          </a>
+          </ExportCsvButton>
 
-          <a
-            href="/api/admin/export?all=1"
+          <ExportCsvButton
+            includeAll
             style={{
               padding: "10px 12px",
               border: "1px solid #d6d3d1",
@@ -126,7 +127,7 @@ export default async function AdminOrdersPage() {
             }}
           >
             Tout réexporter
-          </a>
+          </ExportCsvButton>
         </div>
       </div>
 
