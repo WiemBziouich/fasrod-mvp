@@ -7,6 +7,7 @@ import Image from "next/image";
 import {
   Product,
   MAX_QTY,
+  SIZE_GUIDE,
 } from "@/lib/data";
 
 import { useI18n } from "./I18n";
@@ -187,6 +188,10 @@ useEffect(() => {
             {t("size")}
           </h3>
 
+          <p className="size-guide" aria-label="Guide des tailles">
+            Guide : XS = 34 · S = 36 · M = 38 · L = 40 · XL = 42 · XXL = 44
+          </p>
+
           <div className="row">
 
             {p.sizes.map((s) => (
@@ -201,8 +206,10 @@ useEffect(() => {
                 onClick={() =>
                   setSize(s)
                 }
+                aria-label={`Taille ${s}${SIZE_GUIDE[s] ? `, équivalent ${SIZE_GUIDE[s]}` : ""}`}
               >
-                {s}
+                <span className="size-chip-number">{SIZE_GUIDE[s] ?? "—"}</span>
+                <span>{s}</span>
               </button>
 
             ))}

@@ -673,6 +673,20 @@ h3 {
   transition: 0.2s ease;
 }
 
+.size-guide {
+  margin: -3px 0 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.size-chip-number {
+  display: block;
+  font-size: 0.72rem;
+  line-height: 1;
+  opacity: 0.72;
+  margin-bottom: 3px;
+}
+
 .chip:hover {
   border-color: #aaa;
 }

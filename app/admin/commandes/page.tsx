@@ -1,6 +1,7 @@
 import db from "@/lib/db";
 import AdminOrdersTable from "@/components/AdminOrdersTable";
 import AdminNav from "@/components/AdminNav";
+import OldExportedOrdersCleanup from "@/components/OldExportedOrdersCleanup";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +20,19 @@ type Order = {
 };
 
 export default async function AdminOrdersPage() {
-  const result = await db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 200");
+  const [result, oldExportedResult] = await Promise.all([
+    db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 200"),
+    db.execute(`
+      SELECT COUNT(*) AS count
+      FROM orders
+      WHERE exported_at IS NOT NULL
+        AND datetime(exported_at) <= datetime('now', '-30 days')
+    `),
+  ]);
   const rows = result.rows as unknown as Order[];
+  const oldExportedCount = Number(
+    (oldExportedResult.rows[0] as unknown as { count?: number })?.count ?? 0
+  );
 
   const pending = rows.filter((order) => !order.exported_at).length;
 
@@ -138,6 +150,8 @@ export default async function AdminOrdersPage() {
         Le prix exporté comprend les articles et les frais de livraison de 8 DT.
         Vérifiez les montants avant l’import Navex.
       </p>
+
+      <OldExportedOrdersCleanup count={oldExportedCount} />
       
       <AdminOrdersTable orders={rows} />
 
