@@ -29,7 +29,22 @@ export default async function AdminOrdersPage() {
         AND datetime(exported_at) <= datetime('now', '-30 days')
     `),
   ]);
-  const rows = result.rows as unknown as Order[];
+  const rows: Order[] = result.rows.map((row) => {
+    const value = row as unknown as Record<string, unknown>;
+    return {
+      id: Number(value.id),
+      created_at: String(value.created_at ?? ""),
+      name: String(value.name ?? ""),
+      phone: String(value.phone ?? ""),
+      governorate: String(value.governorate ?? ""),
+      city: String(value.city ?? ""),
+      address: String(value.address ?? ""),
+      designation: String(value.designation ?? ""),
+      item_price: Number(value.item_price ?? 0),
+      total: Number(value.total ?? 0),
+      exported_at: value.exported_at == null ? null : String(value.exported_at),
+    };
+  });
   const oldExportedCount = Number(
     (oldExportedResult.rows[0] as unknown as { count?: number })?.count ?? 0
   );

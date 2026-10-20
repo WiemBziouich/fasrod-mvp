@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { WILAYAS, DELIVERY_FEE, MAX_QTY } from "@/lib/data";
 import { getProduct } from "@/lib/products";
+import { isValidDelegation } from "@/lib/tunisia-locations";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,7 +75,13 @@ export async function POST(req: NextRequest) {
   const city = clean(body.city, 60);
   const governorate = WILAYAS.find((w) => w.v === body.governorate)?.v;
 
-  if (name.length < 3 || address.length < 5 || city.length < 2 || !governorate) {
+  if (
+    name.length < 3 ||
+    address.length < 5 ||
+    city.length < 2 ||
+    !governorate ||
+    !isValidDelegation(governorate, city)
+  ) {
     return NextResponse.json({ error: "fields" }, { status: 400 });
   }
 
