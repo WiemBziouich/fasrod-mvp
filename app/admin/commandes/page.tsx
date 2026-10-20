@@ -5,6 +5,8 @@ import OldExportedOrdersCleanup from "@/components/OldExportedOrdersCleanup";
 import ExportCsvButton from "@/components/ExportCsvButton";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 type Order = {
   id: number;
