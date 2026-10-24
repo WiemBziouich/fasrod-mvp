@@ -23,7 +23,42 @@ export default function ProductView({
   const { t, lang } = useI18n();
   const { addItem } = useCart();
   const [cartMessage, setCartMessage] = useState("");
+  
+const [liveProduct, setLiveProduct] = useState(p);
+const currentProduct = liveProduct;
 
+useEffect(() => {
+  let cancelled = false;
+
+  async function refreshProduct() {
+    try {
+      const response = await fetch("/api/products", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erreur API : ${response.status}`);
+      }
+
+      const items: Product[] = await response.json();
+      const latest = items.find((item) => item.id === p.id);
+
+      if (!cancelled && latest) {
+        setLiveProduct(latest);
+      }
+    } catch (error) {
+      console.error("Erreur de mise à jour du produit :", error);
+    }
+  }
+
+  refreshProduct();
+
+  return () => {
+    cancelled = true;
+  };
+}, [p.id]);
+
+  
   const [img, setImg] = useState(0);
   const [color, setColor] = useState(p.colors[0].name);
   const [size, setSize] = useState(p.sizes[0]);
@@ -41,7 +76,19 @@ const galleryImages =
 useEffect(() => {
   setImg(0);
 }, [color]);
+  
 
+useEffect(() => {
+  if (!currentProduct.colors.some((c) => c.name === color)) {
+    setColor(currentProduct.colors[0]?.name ?? "");
+  }
+
+  if (!currentProduct.sizes.includes(size)) {
+    setSize(currentProduct.sizes[0] ?? "");
+  }
+}, [currentProduct, color, size]);
+
+  
 useEffect(() => {
   if (img >= galleryImages.length) {
     setImg(0);
