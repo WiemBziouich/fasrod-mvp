@@ -10,7 +10,7 @@ import { useI18n } from "./I18n";
 export default function ProductGrid({ products }: { products: Product[] }) {
   const { t } = useI18n();
 
-  const [liveProducts, setLiveProducts] = useState(products);
+  const [liveProducts, setLiveProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
