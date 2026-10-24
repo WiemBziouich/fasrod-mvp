@@ -720,7 +720,7 @@ export default function CartPageClient({
               {lines.map((line) => {
                 const key = cartKey(line);
 
-                if (!line.product) {
+                if (!productsVerified || productsFetchFailed || !line.product) {
                   return (
                     <div
                       key={key}
