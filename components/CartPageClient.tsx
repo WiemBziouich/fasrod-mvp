@@ -75,6 +75,17 @@ export default function CartPageClient({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [completedOrder, setCompletedOrder] =
     useState<OrderSummary | null>(null);
+  
+  // Revenir en haut lorsque la confirmation de commande s'affiche.
+  useEffect(() => {
+    if (completedOrder) {
+      window.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: "auto",
+      });
+    }
+  }, [completedOrder]);
 
   const [formValues, setFormValues] = useState({
     name: "",
