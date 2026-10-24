@@ -10,30 +10,37 @@ import { useI18n } from "./I18n";
 export default function ProductGrid({ products }: { products: Product[] }) {
   const { t } = useI18n();
 
-  const [liveProducts, setLiveProducts] = useState<Product[]>([]);
+  const [liveProducts, setLiveProducts] = useState<Product[]>(products);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadProducts() {
-      try {
-        const response = await fetch("/api/products", {
-          cache: "no-store",
-          headers: { "Cache-Control": "no-cache" },
-        });
+  try {
+    const response = await fetch("/api/products", {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
 
-        if (!response.ok) return;
-
-        const nextProducts = (await response.json()) as Product[];
-        if (!cancelled && Array.isArray(nextProducts)) {
-          setLiveProducts(nextProducts);
-        }
-      } catch (error) {
-        // Keep showing the last known catalogue if a refresh is temporarily unavailable.
-        console.error("Actualisation du catalogue échouée :", error);
-      }
+    if (!response.ok) {
+      throw new Error(`Erreur API : ${response.status}`);
     }
+
+    const nextProducts = (await response.json()) as Product[];
+
+    if (!cancelled && Array.isArray(nextProducts)) {
+      setLiveProducts(nextProducts);
+    }
+  } catch (error) {
+    console.error("Actualisation du catalogue échouée :", error);
+  } finally {
+    if (!cancelled) {
+      setIsLoadingProducts(false);
+    }
+  }
+}
 
     const refresh = () => void loadProducts();
     const refreshWhenVisible = () => {
@@ -134,7 +141,7 @@ export default function ProductGrid({ products }: { products: Product[] }) {
 
       </section>
 
-      {filteredProducts.length > 0 ? (
+      {isLoadingProducts || filteredProducts.length > 0 ? (
 
         <div className="grid">
 
