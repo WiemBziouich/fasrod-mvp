@@ -10,7 +10,7 @@ import { useI18n } from "./I18n";
 export default function ProductGrid({ products }: { products: Product[] }) {
   const { t } = useI18n();
 
-  const [liveProducts, setLiveProducts] = useState<Product[]>(products);
+  const [liveProducts, setLiveProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [search, setSearch] = useState("");
 
@@ -97,7 +97,9 @@ export default function ProductGrid({ products }: { products: Product[] }) {
           </h1>
 
           <p className="muted catalog-count">
-            {filteredProducts.length} {t("products")}
+            {isLoadingProducts
+              ? "Chargement des articles..."
+              : `${filteredProducts.length} ${t("products")}`}
           </p>
         </div>
 
@@ -141,7 +143,9 @@ export default function ProductGrid({ products }: { products: Product[] }) {
 
       </section>
 
-      {isLoadingProducts || filteredProducts.length > 0 ? (
+      {isLoadingProducts ? (
+        <p className="muted">Chargement des articles...</p>
+      ) : filteredProducts.length > 0 ? (
 
         <div className="grid">
 
