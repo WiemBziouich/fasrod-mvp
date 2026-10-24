@@ -25,6 +25,7 @@ export default function ProductView({
   const [cartMessage, setCartMessage] = useState("");
   
 const [liveProduct, setLiveProduct] = useState(p);
+const [liveProducts, setLiveProducts] = useState<Product[]>([]);
 const currentProduct = liveProduct;
 
 useEffect(() => {
@@ -42,6 +43,10 @@ useEffect(() => {
 
       const items: Product[] = await response.json();
       const latest = items.find((item) => item.id === p.id);
+
+      if (!cancelled) {
+  setLiveProducts(items);
+}
 
       if (!cancelled && latest) {
         setLiveProduct(latest);
@@ -96,21 +101,24 @@ useEffect(() => {
 }, [img, galleryImages.length]);
 
   const relatedProducts = useMemo(() => {
-    const sameCategory = products.filter(
-      (product) =>
-        product.id !== p.id &&
-        product.category === p.category
-    );
+  const sameCategory = liveProducts.filter(
+    (product) =>
+      product.id !== currentProduct.id &&
+      product.category === currentProduct.category
+  );
 
-    if (sameCategory.length >= 4) {
-      return sameCategory.slice(0, 4);
-    }
+  if (sameCategory.length >= 4) {
+    return sameCategory.slice(0, 4);
+  }
 
-    const others = products.filter(
-      (product) =>
-        product.id !== p.id &&
-        product.category !== p.category
-    );
+  const others = liveProducts.filter(
+    (product) =>
+      product.id !== currentProduct.id &&
+      product.category !== currentProduct.category
+  );
+
+  return [...sameCategory, ...others].slice(0, 4);
+}, [currentProduct.id, currentProduct.category, liveProducts]);
 
     return [...sameCategory, ...others].slice(0, 4);
   }, [p.id, p.category, products]);
