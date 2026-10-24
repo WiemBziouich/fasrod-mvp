@@ -1,8 +1,20 @@
+
 "use client";
 
-import { useMemo, useState, type FormEvent, type ChangeEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ChangeEvent,
+} from "react";
 import Link from "next/link";
-import { DELIVERY_FEE, MAX_QTY, WILAYAS, type Product } from "@/lib/data";
+import {
+  DELIVERY_FEE,
+  MAX_QTY,
+  WILAYAS,
+  type Product,
+} from "@/lib/data";
 import { getDelegations } from "@/lib/tunisia-locations";
 import { useCart, cartKey } from "./CartContext";
 import { useI18n } from "./I18n";
@@ -26,7 +38,13 @@ type OrderSummary = {
   itemCount: number;
 };
 
-// Nettoyage et validation d'un numéro de téléphone tunisien
+type OrderApiResult = {
+  ok?: boolean;
+  id?: number;
+  total?: number;
+  error?: string;
+};
+
 function cleanPhone(raw: string): string {
   return raw
     .replace(/[\s.\-_/()]+/g, "")
@@ -36,20 +54,28 @@ function cleanPhone(raw: string): string {
 }
 
 function isValidTunisianPhone(phone: string): boolean {
-  // Numéros à 8 chiffres (format standard en Tunisie)
   return /^\d{8}$/.test(phone);
 }
 
-export default function CartPageClient({ products }: { products: Product[] }) {
+export default function CartPageClient({
+  products,
+}: {
+  products: Product[];
+}) {
   const { items, ready, updateQty, removeItem, clear } = useCart();
   const { lang } = useI18n();
+
+  // Catalogue actualisé depuis la même API que la boutique.
+  const [liveProducts, setLiveProducts] = useState<Product[]>(products);
+  const [productsVerified, setProductsVerified] = useState(false);
+  const [productsFetchFailed, setProductsFetchFailed] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [generalError, setGeneralError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [completedOrder, setCompletedOrder] = useState<OrderSummary | null>(null);
+  const [completedOrder, setCompletedOrder] =
+    useState<OrderSummary | null>(null);
 
-  // Valeurs du formulaire
   const [formValues, setFormValues] = useState({
     name: "",
     phone: "",
@@ -60,23 +86,74 @@ export default function CartPageClient({ products }: { products: Product[] }) {
     address: "",
   });
 
+  // Récupération des produits actuels sans utiliser de cache.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshProducts() {
+      try {
+        const response = await fetch("/api/products", {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache",
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("Impossible de récupérer le catalogue.");
+        }
+
+        const data: unknown = await response.json();
+
+        if (!Array.isArray(data)) {
+          throw new Error("Réponse du catalogue invalide.");
+        }
+
+        if (!cancelled) {
+          setLiveProducts(data as Product[]);
+          setProductsFetchFailed(false);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setProductsFetchFailed(true);
+          console.error("Actualisation du panier échouée :", error);
+        }
+      } finally {
+        if (!cancelled) {
+          setProductsVerified(true);
+        }
+      }
+    }
+
+    void refreshProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const delegations = useMemo(
     () => getDelegations(formValues.governorate),
     [formValues.governorate]
   );
 
   const productMap = useMemo(
-    () => new Map(products.map((product) => [product.id, product])),
-    [products]
+    () => new Map(liveProducts.map((product) => [product.id, product])),
+    [liveProducts]
   );
 
-  // Association de chaque article avec son produit et sa miniature de couleur exacte
+  // Association des articles avec leurs produits et images.
   const lines = useMemo(() => {
     return items.map((item) => {
       const product = productMap.get(item.productId);
-      const colorObj = product?.colors.find((c) => c.name === item.color);
+      const colorObj = product?.colors.find(
+        (color) => color.name === item.color
+      );
+
       const image =
-        colorObj?.images?.[0] || product?.images?.[0] || "/brand-icon.png";
+        colorObj?.images?.[0] ||
+        product?.images?.[0] ||
+        "/brand-icon.png";
 
       return {
         ...item,
@@ -88,43 +165,72 @@ export default function CartPageClient({ products }: { products: Product[] }) {
   }, [items, productMap]);
 
   const subtotal = lines.reduce(
-    (sum, line) => sum + (line.product?.price ?? 0) * line.qty,
+    (sum, line) =>
+      sum + (line.product?.price ?? 0) * line.qty,
     0
   );
+
   const total = subtotal + (items.length ? DELIVERY_FEE : 0);
 
   function handleInputChange(
-    e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+    event: ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >
   ) {
-    const { name, value } = e.target;
+    const { name, value } = event.target;
 
     if (name === "governorate") {
-      setFormValues((prev) => ({ ...prev, governorate: value, city: "" }));
-      setFieldErrors((prev) => ({ ...prev, governorate: undefined, city: undefined }));
+      setFormValues((previous) => ({
+        ...previous,
+        governorate: value,
+        city: "",
+      }));
+
+      setFieldErrors((previous) => ({
+        ...previous,
+        governorate: undefined,
+        city: undefined,
+      }));
+
       return;
     }
 
     if (name === "phone" || name === "phone2") {
       const cleaned = cleanPhone(value);
-      setFormValues((prev) => ({ ...prev, [name]: cleaned }));
 
-      if (fieldErrors[name as keyof FieldErrors]) {
-        setFieldErrors((prev) => ({ ...prev, [name]: undefined }));
-      }
+      setFormValues((previous) => ({
+        ...previous,
+        [name]: cleaned,
+      }));
+
+      setFieldErrors((previous) => ({
+        ...previous,
+        [name]: undefined,
+      }));
+
       return;
     }
 
-    setFormValues((prev) => ({ ...prev, [name]: value }));
+    setFormValues((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
 
-    if (fieldErrors[name as keyof FieldErrors]) {
-      setFieldErrors((prev) => ({ ...prev, [name]: undefined }));
+    if (name in fieldErrors) {
+      setFieldErrors((previous) => ({
+        ...previous,
+        [name]: undefined,
+      }));
     }
   }
 
   function validate(): boolean {
     const errors: FieldErrors = {};
 
-    if (!formValues.name.trim() || formValues.name.trim().length < 3) {
+    if (
+      !formValues.name.trim() ||
+      formValues.name.trim().length < 3
+    ) {
       errors.name =
         lang === "ar"
           ? "الرجاء إدخال الاسم واللقب (3 أحرف على الأقل)."
@@ -164,14 +270,20 @@ export default function CartPageClient({ products }: { products: Product[] }) {
           : "Veuillez choisir votre gouvernorat.";
     }
 
-    if (!formValues.city.trim() || formValues.city.trim().length < 2) {
+    if (
+      !formValues.city.trim() ||
+      formValues.city.trim().length < 2
+    ) {
       errors.city =
         lang === "ar"
           ? "الرجاء تحديد المدينة أو المعتمدية."
           : "Veuillez indiquer votre ville ou délégation.";
     }
 
-    if (!formValues.address.trim() || formValues.address.trim().length < 5) {
+    if (
+      !formValues.address.trim() ||
+      formValues.address.trim().length < 5
+    ) {
       errors.address =
         lang === "ar"
           ? "الرجاء توضيح العنوان بالتفصيل (الشارع، رقم المنزل، نقطة دالة...)."
@@ -179,16 +291,53 @@ export default function CartPageClient({ products }: { products: Product[] }) {
     }
 
     setFieldErrors(errors);
+
     return Object.keys(errors).length === 0;
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     if (busy || !items.length) return;
 
     setGeneralError("");
 
-    if (!validate()) {
+    if (!validate()) return;
+
+    // Ne pas envoyer une commande si les produits n'ont pas pu
+    // être vérifiés ou si un article est introuvable.
+    if (!productsVerified || productsFetchFailed) {
+      setGeneralError(
+        lang === "ar"
+          ? "تعذر التحقق من المنتجات. أعد تحميل الصفحة وحاول مجدداً."
+          : "Impossible de vérifier les produits. Rechargez la page puis réessayez."
+      );
+      return;
+    }
+
+    if (lines.some((line) => !line.product)) {
+      setGeneralError(
+        lang === "ar"
+          ? "يوجد منتج لم يعد متوفراً في القائمة الحالية. احذفه من السلة."
+          : "Un article est introuvable dans le catalogue actuel. Retirez-le du panier."
+      );
+      return;
+    }
+
+    if (
+      lines.some(
+        (line) =>
+          !line.product?.colors.some(
+            (color) => color.name === line.color
+          ) ||
+          !line.product?.sizes.includes(line.size)
+      )
+    ) {
+      setGeneralError(
+        lang === "ar"
+          ? "يوجد لون أو مقاس غير متوفر. احذف هذا الخيار من السلة."
+          : "Une couleur ou une taille n'est plus disponible. Vérifiez votre panier."
+      );
       return;
     }
 
@@ -197,7 +346,9 @@ export default function CartPageClient({ products }: { products: Product[] }) {
     try {
       const response = await fetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           ...formValues,
           address: formValues.locality.trim()
@@ -212,7 +363,9 @@ export default function CartPageClient({ products }: { products: Product[] }) {
         }),
       });
 
-      const result = await response.json().catch(() => ({}));
+      const result = (await response
+        .json()
+        .catch(() => ({}))) as OrderApiResult;
 
       if (!response.ok || !result.ok) {
         const messages: Record<string, string> = {
@@ -233,7 +386,9 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               ? "برشا كوموندات، عاود بعد شوية."
               : "Trop de commandes, réessayez dans quelques instants.",
           empty:
-            lang === "ar" ? "السلة فارغة." : "Votre panier est vide.",
+            lang === "ar"
+              ? "السلة فارغة."
+              : "Votre panier est vide.",
           unavailable:
             lang === "ar"
               ? "منتج غير متوفر حالياً، حدّث السلة."
@@ -243,7 +398,11 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               ? "تعذّر تسجيل الطلب، عاود المحاولة."
               : "La commande n'a pas pu être enregistrée. Réessayez.",
         };
-        throw new Error(messages[result.error] || "Une erreur est survenue.");
+
+        throw new Error(
+          messages[result.error ?? ""] ||
+            "Une erreur est survenue."
+        );
       }
 
       setCompletedOrder({
@@ -253,14 +412,17 @@ export default function CartPageClient({ products }: { products: Product[] }) {
         governorate: formValues.governorate,
         city: formValues.city,
         total: Number(result.total ?? total),
-        itemCount: items.reduce((sum, item) => sum + item.qty, 0),
+        itemCount: items.reduce(
+          (sum, item) => sum + item.qty,
+          0
+        ),
       });
 
       clear();
-    } catch (e) {
+    } catch (error) {
       setGeneralError(
-        e instanceof Error
-          ? e.message
+        error instanceof Error
+          ? error.message
           : lang === "ar"
             ? "مشكل في الاتصال، عاود المحاولة."
             : "Problème de connexion, veuillez réessayer."
@@ -270,20 +432,28 @@ export default function CartPageClient({ products }: { products: Product[] }) {
     }
   }
 
-  // Écran de confirmation de commande
+  // Écran de confirmation de commande.
   if (completedOrder) {
     const currentHour = new Date().getHours();
-    // Entre 9h00 et 18h00 : appel aujourd'hui. À partir de 18h00 (ou la nuit) : appel demain matin.
-    const isCallingToday = currentHour >= 9 && currentHour < 18;
+    const isCallingToday =
+      currentHour >= 9 && currentHour < 18;
 
-    const wilayaObj = WILAYAS.find((w) => w.v === completedOrder.governorate);
-    const delegationObj = getDelegations(completedOrder.governorate).find(
-      (delegation) => delegation.Value === completedOrder.city
+    const wilayaObj = WILAYAS.find(
+      (wilaya) => wilaya.v === completedOrder.governorate
     );
+
+    const delegationObj = getDelegations(
+      completedOrder.governorate
+    ).find(
+      (delegation) =>
+        delegation.Value === completedOrder.city
+    );
+
     const wilayaDisplay =
       lang === "ar"
         ? wilayaObj?.ar || completedOrder.governorate
         : completedOrder.governorate;
+
     const cityDisplay = delegationObj
       ? lang === "ar"
         ? delegationObj.NameAr
@@ -292,15 +462,20 @@ export default function CartPageClient({ products }: { products: Product[] }) {
 
     return (
       <main className="wrap ok">
-        <div className="success-icon" aria-hidden="true">✓</div>
+        <div className="success-icon" aria-hidden="true">
+          ✓
+        </div>
+
         <h1>
           {lang === "ar"
             ? "وصلتنا الكوموند متاعك ! 🎉"
             : "Wesletna el commande mte3ek ! 🎉"}
         </h1>
 
-        {/* Encadré Alerte Appel de Confirmation (Tonalité Tounsi / Arabizi Jeunesse) */}
-        <section className="phone-alert-card" aria-label="Confirmation téléphonique">
+        <section
+          className="phone-alert-card"
+          aria-label="Confirmation téléphonique"
+        >
           <div className="phone-alert-header">
             <span style={{ fontSize: "1.4rem" }}>📞</span>
             <span>
@@ -325,7 +500,7 @@ export default function CartPageClient({ products }: { products: Product[] }) {
                 </strong>{" "}
                 <span>
                   {lang === "ar"
-                    ? `باش يطلبوك على نمرتك (${completedOrder.phone}) ☎️`
+                    ? `باش يطلبوك على نومروك (${completedOrder.phone}) ☎️`
                     : `Bech yotlbouk 3al noumrou mte3ek (${completedOrder.phone}) ☎️`}
                 </span>
               </div>
@@ -353,30 +528,39 @@ export default function CartPageClient({ products }: { products: Product[] }) {
             <span>
               {lang === "ar"
                 ? "رد بالك : كان ما تحصّلوش عليك، الكوموند ما تخرجش ! ❌"
-                : "Radd belek : Ken ma t7aslouch 3lik, el commande ma tokhrojech ! ❌"}
+                : "Rod belek : Ken ma t7aslouch 3lik, el commande ma tokhrojech ! ❌"}
             </span>
           </div>
         </section>
 
-        {/* Récapitulatif commande (sans numéro de commande) */}
         <div className="order-success-card">
           <div className="order-recap-row">
-            <span className="muted">{lang === "ar" ? "الاسم" : "Esm w la9ab"}</span>
+            <span className="muted">
+              {lang === "ar" ? "الاسم" : "Esm w la9ab"}
+            </span>
             <strong>{completedOrder.name}</strong>
           </div>
 
           <div className="order-recap-row">
-            <span className="muted">{lang === "ar" ? "التاليفون" : "Numéro"}</span>
+            <span className="muted">
+              {lang === "ar" ? "التاليفون" : "Numéro"}
+            </span>
             <strong dir="ltr">{completedOrder.phone}</strong>
           </div>
 
           <div className="order-recap-row">
-            <span className="muted">{lang === "ar" ? "التوصيل" : "Livraison"}</span>
-            <strong>{wilayaDisplay} — {cityDisplay}</strong>
+            <span className="muted">
+              {lang === "ar" ? "التوصيل" : "Livraison"}
+            </span>
+            <strong>
+              {wilayaDisplay} — {cityDisplay}
+            </strong>
           </div>
 
           <div className="order-recap-row">
-            <span className="muted">{lang === "ar" ? "عدد القطع" : "Articles"}</span>
+            <span className="muted">
+              {lang === "ar" ? "عدد القطع" : "Articles"}
+            </span>
             <span>
               {lang === "ar"
                 ? `${completedOrder.itemCount} قطعة`
@@ -384,26 +568,56 @@ export default function CartPageClient({ products }: { products: Product[] }) {
             </span>
           </div>
 
-          <div className="order-recap-row" style={{ paddingTop: 10, fontSize: "1.1rem" }}>
+          <div
+            className="order-recap-row"
+            style={{ paddingTop: 10, fontSize: "1.1rem" }}
+          >
             <span>
               <strong>
-                {lang === "ar" ? "المجموع كاش عند الاستلام" : "Total à payer (COD)"}
+                {lang === "ar"
+                  ? "المجموع كاش عند الاستلام"
+                  : "Total à payer "}
               </strong>
             </span>
-            <strong style={{ fontSize: "1.25rem", color: "var(--fg)" }}>
-              {completedOrder.total} {lang === "ar" ? "د.ت" : "DT"}
+
+            <strong
+              style={{
+                fontSize: "1.25rem",
+                color: "var(--fg)",
+              }}
+            >
+              {completedOrder.total}{" "}
+              {lang === "ar" ? "د.ت" : "DT"}
             </strong>
           </div>
-          <small className="muted" style={{ fontSize: "0.78rem" }}>
+
+          <small
+            className="muted"
+            style={{ fontSize: "0.78rem" }}
+          >
             {lang === "ar"
               ? "* معلوم التوصيل (8 د.ت) لكامل تونس محسوب في المجموع."
               : "* Frais fixes de livraison (8 DT) partout en Tunisie inclus."}
           </small>
         </div>
 
-        <div style={{ marginTop: 24, display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
-          <Link className="btn big" href="/" style={{ minWidth: 220 }}>
-            {lang === "ar" ? "← ارجع للمتجر" : "← Arja3 lel boutique"}
+        <div
+          style={{
+            marginTop: 24,
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            justifyContent: "center",
+          }}
+        >
+          <Link
+            className="btn big"
+            href="/"
+            style={{ minWidth: 220 }}
+          >
+            {lang === "ar"
+              ? "← ارجع للمتجر"
+              : "← Arja3 lel boutique"}
           </Link>
         </div>
       </main>
@@ -413,8 +627,16 @@ export default function CartPageClient({ products }: { products: Product[] }) {
   if (!ready) {
     return (
       <main className="wrap">
-        <p className="muted" style={{ padding: "40px 0", textAlign: "center" }}>
-          {lang === "ar" ? "جاري تحميل السلة…" : "Chargement du panier…"}
+        <p
+          className="muted"
+          style={{
+            padding: "40px 0",
+            textAlign: "center",
+          }}
+        >
+          {lang === "ar"
+            ? "جاري تحميل السلة…"
+            : "Chargement du panier…"}
         </p>
       </main>
     );
@@ -423,45 +645,103 @@ export default function CartPageClient({ products }: { products: Product[] }) {
   return (
     <main className="wrap">
       <Link href="/" className="back-link muted">
-        {lang === "ar" ? "← واصل التسوّق" : "← Continuer les achats"}
+        {lang === "ar"
+          ? "← واصل التسوّق"
+          : "← Continuer les achats"}
       </Link>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", margin: "16px 0 20px" }}>
-        <h1 style={{ margin: 0, fontSize: "clamp(1.5rem, 3vw, 2rem)" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          margin: "16px 0 20px",
+        }}
+      >
+        <h1
+          style={{
+            margin: 0,
+            fontSize: "clamp(1.5rem, 3vw, 2rem)",
+          }}
+        >
           {lang === "ar" ? "سلة المشتريات" : "Mon panier"}
         </h1>
+
         {items.length > 0 && (
-          <span className="muted" style={{ fontSize: "0.9rem" }}>
-            {items.reduce((sum, item) => sum + item.qty, 0)} {lang === "ar" ? "قطعة" : "pièce(s)"}
+          <span
+            className="muted"
+            style={{ fontSize: "0.9rem" }}
+          >
+            {items.reduce((sum, item) => sum + item.qty, 0)}{" "}
+            {lang === "ar" ? "قطعة" : "pièce(s)"}
           </span>
         )}
       </div>
 
       {!items.length ? (
-        <div className="form" style={{ textAlign: "center", padding: "45px 20px" }}>
-          <p style={{ fontSize: "1.1rem", margin: "0 0 16px" }}>
-            {lang === "ar" ? "سلتك فارغة حالياً." : "Ton panier est vide."}
+        <div
+          className="form"
+          style={{
+            textAlign: "center",
+            padding: "45px 20px",
+          }}
+        >
+          <p
+            style={{
+              fontSize: "1.1rem",
+              margin: "0 0 16px",
+            }}
+          >
+            {lang === "ar"
+              ? "سلتك فارغة حالياً."
+              : "Ton panier est vide."}
           </p>
-          <Link href="/" className="btn" style={{ margin: "auto" }}>
-            {lang === "ar" ? "اكتشف تشكيلة Fasrod" : "Découvrir les articles"}
+
+          <Link
+            href="/"
+            className="btn"
+            style={{ margin: "auto" }}
+          >
+            {lang === "ar"
+              ? "اكتشف تشكيلة Fasrod"
+              : "Découvrir les articles"}
           </Link>
         </div>
       ) : (
         <>
-          {/* 1 & 2 : LISTE COMPACTE DES ARTICLES AVEC MINIATURES */}
-          <div className="form" style={{ padding: "16px 18px", marginTop: 0 }}>
+          <div
+            className="form"
+            style={{
+              padding: "16px 18px",
+              marginTop: 0,
+            }}
+          >
             <div className="cart-items-list">
               {lines.map((line) => {
                 const key = cartKey(line);
 
                 if (!line.product) {
                   return (
-                    <div key={key} className="cart-item-card">
+                    <div
+                      key={key}
+                      className="cart-item-card"
+                    >
                       <div className="cart-item-info">
                         <p className="err">
-                          {lang === "ar" ? "منتج لم يعد متوفراً." : "Un article n'est plus disponible."}
+                          {!productsVerified
+                            ? lang === "ar"
+                              ? "جاري التحقق من المنتج..."
+                              : "Vérification du produit..."
+                            : productsFetchFailed
+                              ? lang === "ar"
+                                ? "تعذر التحقق من المنتج. أعد تحميل الصفحة."
+                                : "Impossible de vérifier le produit. Rechargez la page."
+                              : lang === "ar"
+                                ? "هذا المنتج لم يعد متوفراً."
+                                : "Ce produit est introuvable dans le catalogue actuel."}
                         </p>
                       </div>
+
                       <button
                         type="button"
                         className="cart-remove-btn"
@@ -474,12 +754,17 @@ export default function CartPageClient({ products }: { products: Product[] }) {
                 }
 
                 const colorExists = Boolean(line.colorObj);
-                const sizeExists = line.product.sizes.includes(line.size);
-                const itemTotal = line.product.price * line.qty;
+                const sizeExists = line.product.sizes.includes(
+                  line.size
+                );
+                const itemTotal =
+                  line.product.price * line.qty;
 
                 return (
-                  <article key={key} className="cart-item-card">
-                    {/* Miniature produit */}
+                  <article
+                    key={key}
+                    className="cart-item-card"
+                  >
                     <Link
                       href={`/produit/${line.product.id}`}
                       className="cart-item-thumb-link"
@@ -494,20 +779,28 @@ export default function CartPageClient({ products }: { products: Product[] }) {
                       />
                     </Link>
 
-                    {/* Détails compacts */}
                     <div className="cart-item-info">
                       <div className="cart-item-header">
-                        <Link href={`/produit/${line.product.id}`} className="cart-item-title">
+                        <Link
+                          href={`/produit/${line.product.id}`}
+                          className="cart-item-title"
+                        >
                           {line.product.name}
                         </Link>
-                        <span className="cart-item-price">{itemTotal} DT</span>
+
+                        <span className="cart-item-price">
+                          {itemTotal} DT
+                        </span>
                       </div>
 
                       <div className="cart-item-meta">
                         <span className="cart-badge-pill">
                           <span
                             className="cart-color-dot"
-                            style={{ background: line.colorObj?.hex || "#999" }}
+                            style={{
+                              background:
+                                line.colorObj?.hex || "#999",
+                            }}
                           />
                           {line.color}
                         </span>
@@ -516,37 +809,59 @@ export default function CartPageClient({ products }: { products: Product[] }) {
                           {line.size}
                         </span>
 
-                        <span className="muted" style={{ fontSize: "0.78rem" }}>
+                        <span
+                          className="muted"
+                          style={{ fontSize: "0.78rem" }}
+                        >
                           ({line.product.price} DT / pc)
                         </span>
                       </div>
 
                       {(!colorExists || !sizeExists) && (
-                        <p className="err" style={{ fontSize: "0.8rem", margin: "2px 0" }}>
+                        <p
+                          className="err"
+                          style={{
+                            fontSize: "0.8rem",
+                            margin: "2px 0",
+                          }}
+                        >
                           {lang === "ar"
                             ? "هذا الخيار غير متوفر حالياً، يرجى حذفه."
                             : "Cette variante n'est plus disponible."}
                         </p>
                       )}
 
-                      {/* Stepper tactile ergonomique pour mobile (une main) */}
                       <div className="cart-item-actions">
-                        <div className="qty-stepper" role="group" aria-label="Quantité">
+                        <div
+                          className="qty-stepper"
+                          role="group"
+                          aria-label="Quantité"
+                        >
                           <button
                             type="button"
                             className="qty-btn"
                             disabled={busy || line.qty <= 1}
-                            onClick={() => updateQty(key, line.qty - 1)}
+                            onClick={() =>
+                              updateQty(key, line.qty - 1)
+                            }
                             aria-label="Diminuer"
                           >
                             −
                           </button>
-                          <span className="qty-value">{line.qty}</span>
+
+                          <span className="qty-value">
+                            {line.qty}
+                          </span>
+
                           <button
                             type="button"
                             className="qty-btn"
-                            disabled={busy || line.qty >= MAX_QTY}
-                            onClick={() => updateQty(key, line.qty + 1)}
+                            disabled={
+                              busy || line.qty >= MAX_QTY
+                            }
+                            onClick={() =>
+                              updateQty(key, line.qty + 1)
+                            }
                             aria-label="Augmenter"
                           >
                             +
@@ -568,41 +883,92 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               })}
             </div>
 
-            {/* Récapitulatif tarifaire */}
             <div className="sum" style={{ marginTop: 14 }}>
-              <span>{lang === "ar" ? "مجموع المنتجات" : "Sous-total articles"}</span>
+              <span>
+                {lang === "ar"
+                  ? "مجموع المنتجات"
+                  : "Sous-total articles"}
+              </span>
               <strong>{subtotal} DT</strong>
 
               <span>
-                {lang === "ar" ? "التوصيل لكامل تونس" : "Livraison partout en Tunisie"}
+                {lang === "ar"
+                  ? "التوصيل لكامل تونس"
+                  : "Livraison partout en Tunisie"}
               </span>
-              <strong>{items.length ? DELIVERY_FEE : 0} DT</strong>
+              <strong>
+                {items.length ? DELIVERY_FEE : 0} DT
+              </strong>
 
-              <b style={{ fontSize: "1.1rem" }}>{lang === "ar" ? "المجموع الجملي" : "Total à payer"}</b>
-              <b style={{ fontSize: "1.2rem", color: "var(--fg)" }}>{total} DT</b>
+              <b style={{ fontSize: "1.1rem" }}>
+                {lang === "ar"
+                  ? "المجموع الجملي"
+                  : "Total à payer"}
+              </b>
+              <b
+                style={{
+                  fontSize: "1.2rem",
+                  color: "var(--fg)",
+                }}
+              >
+                {total} DT
+              </b>
             </div>
           </div>
 
-          {/* 3 & 4 : FORMULAIRE DE LIVRAISON AMÉLIORÉ (ACCESSIBLE & MOBILE FIRST) */}
-          <form className="form" onSubmit={submit} noValidate>
-            <h2 style={{ fontSize: "1.2rem", margin: "0 0 4px" }}>
-              {lang === "ar" ? "معلومات التوصيل (الدفع عند الاستلام)" : "Coordonnées de livraison"}
+          <form
+            className="form"
+            onSubmit={submit}
+            noValidate
+          >
+            <h2
+              style={{
+                fontSize: "1.2rem",
+                margin: "0 0 4px",
+              }}
+            >
+              {lang === "ar"
+                ? "معلومات التوصيل (الدفع عند الاستلام)"
+                : "Coordonnées de livraison"}
             </h2>
-            <p className="muted" style={{ fontSize: "0.85rem", margin: "0 0 14px" }}>
+
+            <p
+              className="muted"
+              style={{
+                fontSize: "0.85rem",
+                margin: "0 0 14px",
+              }}
+            >
               {lang === "ar"
                 ? "الرجاء كتابة معلومات دقيقة لتسريع وصول طلبك."
                 : "Remplissez ce formulaire pour recevoir votre commande."}
             </p>
 
-            {/* Honeypot anti-spam bot */}
-            <input name="website" tabIndex={-1} autoComplete="off" className="hp" aria-hidden="true" />
+            <input
+              name="website"
+              tabIndex={-1}
+              autoComplete="off"
+              className="hp"
+              aria-hidden="true"
+            />
 
-            {/* 1. NOM & PRÉNOM */}
             <div className="form-group">
-              <label htmlFor="field-name" className="form-label">
-                <span>{lang === "ar" ? "الاسم واللقب *" : "Nom et prénom *"}</span>
-                <span className="form-hint">{lang === "ar" ? "مثال: الاسم واللقب" : "Ex: Prénom & Nom"}</span>
+              <label
+                htmlFor="field-name"
+                className="form-label"
+              >
+                <span>
+                  {lang === "ar"
+                    ? "الاسم واللقب *"
+                    : "Nom et prénom *"}
+                </span>
+                <span className="form-hint">
+                  {lang === "ar"
+                    ? "مثال: الاسم واللقب"
+                    : "Ex: Prénom & Nom"}
+                </span>
               </label>
+
               <input
                 id="field-name"
                 name="name"
@@ -611,10 +977,17 @@ export default function CartPageClient({ products }: { products: Product[] }) {
                 maxLength={80}
                 value={formValues.name}
                 onChange={handleInputChange}
-                className={fieldErrors.name ? "input-error" : ""}
-                placeholder={lang === "ar" ? "الاسم واللقب" : "Votre nom et prénom"}
+                className={
+                  fieldErrors.name ? "input-error" : ""
+                }
+                placeholder={
+                  lang === "ar"
+                    ? "الاسم واللقب"
+                    : "Votre nom et prénom"
+                }
                 autoComplete="name"
               />
+
               {fieldErrors.name && (
                 <p role="alert" className="field-error-msg">
                   ⚠️ {fieldErrors.name}
@@ -622,12 +995,23 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               )}
             </div>
 
-            {/* 2. TÉLÉPHONE 1 (VALIDATION STRICTE 8 CHIFFRES) */}
             <div className="form-group">
-              <label htmlFor="field-phone" className="form-label">
-                <span>{lang === "ar" ? "رقم الهاتف الأساسي *" : "Téléphone principal *"}</span>
-                <span className="form-hint">{lang === "ar" ? "8 أرقام (مثال: 12 345 678)" : "8 chiffres (ex: 12 345 678)"}</span>
+              <label
+                htmlFor="field-phone"
+                className="form-label"
+              >
+                <span>
+                  {lang === "ar"
+                    ? "رقم الهاتف الأساسي *"
+                    : "Téléphone principal *"}
+                </span>
+                <span className="form-hint">
+                  {lang === "ar"
+                    ? "8 أرقام (مثال: 12 345 678)"
+                    : "8 chiffres (ex: 12 345 678)"}
+                </span>
               </label>
+
               <input
                 id="field-phone"
                 name="phone"
@@ -638,10 +1022,17 @@ export default function CartPageClient({ products }: { products: Product[] }) {
                 maxLength={8}
                 value={formValues.phone}
                 onChange={handleInputChange}
-                className={fieldErrors.phone ? "input-error" : ""}
-                placeholder={lang === "ar" ? "مثال: 12 345 678" : "Ex: 12 345 678"}
+                className={
+                  fieldErrors.phone ? "input-error" : ""
+                }
+                placeholder={
+                  lang === "ar"
+                    ? "مثال: 12 345 678"
+                    : "Ex: 12 345 678"
+                }
                 autoComplete="tel"
               />
+
               {fieldErrors.phone && (
                 <p role="alert" className="field-error-msg">
                   ⚠️ {fieldErrors.phone}
@@ -649,12 +1040,23 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               )}
             </div>
 
-            {/* 3. TÉLÉPHONE 2 (FACULTATIF MAIS RECOMMANDÉ) */}
             <div className="form-group">
-              <label htmlFor="field-phone2" className="form-label">
-                <span>{lang === "ar" ? "هاتف ثانٍ (اختياري لكن مفيد)" : "Deuxième téléphone (facultatif)"}</span>
-                <span className="form-hint">{lang === "ar" ? "في حال تعذّر الاتصال بالرقم الأول" : "Recommandé pour le livreur"}</span>
+              <label
+                htmlFor="field-phone2"
+                className="form-label"
+              >
+                <span>
+                  {lang === "ar"
+                    ? "هاتف ثانٍ (اختياري لكن مفيد)"
+                    : "Deuxième téléphone (facultatif)"}
+                </span>
+                <span className="form-hint">
+                  {lang === "ar"
+                    ? "في حال تعذّر الاتصال بالرقم الأول"
+                    : "Recommandé pour le livreur"}
+                </span>
               </label>
+
               <input
                 id="field-phone2"
                 name="phone2"
@@ -664,9 +1066,16 @@ export default function CartPageClient({ products }: { products: Product[] }) {
                 maxLength={8}
                 value={formValues.phone2}
                 onChange={handleInputChange}
-                className={fieldErrors.phone2 ? "input-error" : ""}
-                placeholder={lang === "ar" ? "رقم ثانٍ للاحتياط" : "Ex: 12 345 678 (facultatif)"}
+                className={
+                  fieldErrors.phone2 ? "input-error" : ""
+                }
+                placeholder={
+                  lang === "ar"
+                    ? "رقم ثانٍ للاحتياط"
+                    : "Ex: 12 345 678 (facultatif)"
+                }
               />
+
               {fieldErrors.phone2 && (
                 <p role="alert" className="field-error-msg">
                   ⚠️ {fieldErrors.phone2}
@@ -674,28 +1083,44 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               )}
             </div>
 
-            {/* 4. GOUVERNORAT (24 WILAYAS) */}
             <div className="form-group">
-              <label htmlFor="field-governorate" className="form-label">
-                <span>{lang === "ar" ? "الولاية *" : "Gouvernorat (Wilaya) *"}</span>
+              <label
+                htmlFor="field-governorate"
+                className="form-label"
+              >
+                <span>
+                  {lang === "ar"
+                    ? "الولاية *"
+                    : "Gouvernorat (Wilaya) *"}
+                </span>
               </label>
+
               <select
                 id="field-governorate"
                 name="governorate"
                 required
                 value={formValues.governorate}
                 onChange={handleInputChange}
-                className={fieldErrors.governorate ? "input-error" : ""}
+                className={
+                  fieldErrors.governorate ? "input-error" : ""
+                }
               >
                 <option value="" disabled>
-                  {lang === "ar" ? "— اختر الولاية —" : "— Sélectionner votre gouvernorat —"}
+                  {lang === "ar"
+                    ? "— اختر الولاية —"
+                    : "— Sélectionner votre gouvernorat —"}
                 </option>
+
                 {WILAYAS.map((wilaya) => (
-                  <option key={wilaya.v} value={wilaya.v}>
+                  <option
+                    key={wilaya.v}
+                    value={wilaya.v}
+                  >
                     {lang === "ar" ? wilaya.ar : wilaya.v}
                   </option>
                 ))}
               </select>
+
               {fieldErrors.governorate && (
                 <p role="alert" className="field-error-msg">
                   ⚠️ {fieldErrors.governorate}
@@ -703,32 +1128,56 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               )}
             </div>
 
-            {/* 5. DÉLÉGATION FILTRÉE PAR GOUVERNORAT */}
             <div className="form-group">
-              <label htmlFor="field-city" className="form-label">
-                <span>{lang === "ar" ? "المدينة / المعتمدية *" : "Ville / délégation *"}</span>
-                <span className="form-hint">{lang === "ar" ? "اختر المعتمدية" : "Choisissez d’abord votre gouvernorat"}</span>
+              <label
+                htmlFor="field-city"
+                className="form-label"
+              >
+                <span>
+                  {lang === "ar"
+                    ? "المدينة / المعتمدية *"
+                    : "Ville / délégation *"}
+                </span>
+                <span className="form-hint">
+                  {lang === "ar"
+                    ? "اختر المعتمدية"
+                    : "Choisissez d’abord votre gouvernorat"}
+                </span>
               </label>
+
               <select
                 id="field-city"
                 name="city"
                 required
                 value={formValues.city}
                 onChange={handleInputChange}
-                className={fieldErrors.city ? "input-error" : ""}
+                className={
+                  fieldErrors.city ? "input-error" : ""
+                }
                 disabled={!formValues.governorate}
               >
                 <option value="" disabled>
                   {!formValues.governorate
-                    ? (lang === "ar" ? "— اختر الولاية أولاً —" : "— Choisir d’abord le gouvernorat —")
-                    : (lang === "ar" ? "— اختر المعتمدية —" : "— Sélectionner la délégation —")}
+                    ? lang === "ar"
+                      ? "— اختر الولاية أولاً —"
+                      : "— Choisir d’abord le gouvernorat —"
+                    : lang === "ar"
+                      ? "— اختر المعتمدية —"
+                      : "— Sélectionner la délégation —"}
                 </option>
+
                 {delegations.map((delegation) => (
-                  <option key={delegation.Value} value={delegation.Value}>
-                    {lang === "ar" ? delegation.NameAr : delegation.Name}
+                  <option
+                    key={delegation.Value}
+                    value={delegation.Value}
+                  >
+                    {lang === "ar"
+                      ? delegation.NameAr
+                      : delegation.Name}
                   </option>
                 ))}
               </select>
+
               {fieldErrors.city && (
                 <p role="alert" className="field-error-msg">
                   ⚠️ {fieldErrors.city}
@@ -736,29 +1185,55 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               )}
             </div>
 
-            {/* 6. LOCALITÉ / QUARTIER FACULTATIF */}
             <div className="form-group">
-              <label htmlFor="field-locality" className="form-label">
-                <span>{lang === "ar" ? "المنطقة / الحي (اختياري)" : "Localité / quartier (facultatif)"}</span>
-                <span className="form-hint">{lang === "ar" ? "مثال: حي النصر" : "Ex: Cité Ennasr"}</span>
+              <label
+                htmlFor="field-locality"
+                className="form-label"
+              >
+                <span>
+                  {lang === "ar"
+                    ? "المنطقة / الحي (اختياري)"
+                    : "Localité / quartier (facultatif)"}
+                </span>
+                <span className="form-hint">
+                  {lang === "ar"
+                    ? "مثال: حي النصر"
+                    : "Ex: Cité Ennasr"}
+                </span>
               </label>
+
               <input
                 id="field-locality"
                 name="locality"
                 maxLength={80}
                 value={formValues.locality}
                 onChange={handleInputChange}
-                placeholder={lang === "ar" ? "مثال: حي النصر" : "Ex: Cité Ennasr"}
+                placeholder={
+                  lang === "ar"
+                    ? "مثال: حي النصر"
+                    : "Ex: Cité Ennasr"
+                }
                 autoComplete="address-level3"
               />
             </div>
 
-            {/* 7. ADRESSE EXACTE */}
             <div className="form-group">
-              <label htmlFor="field-address" className="form-label">
-                <span>{lang === "ar" ? "العنوان بالتفصيل *" : "Adresse complète *"}</span>
-                <span className="form-hint">{lang === "ar" ? "الشارع، رقم المنزل، نقطة دالة" : "Rue, repère, n°..."}</span>
+              <label
+                htmlFor="field-address"
+                className="form-label"
+              >
+                <span>
+                  {lang === "ar"
+                    ? "العنوان بالتفصيل *"
+                    : "Adresse complète *"}
+                </span>
+                <span className="form-hint">
+                  {lang === "ar"
+                    ? "الشارع، رقم المنزل، نقطة دالة"
+                    : "Rue, repère, n°..."}
+                </span>
               </label>
+
               <textarea
                 id="field-address"
                 name="address"
@@ -768,13 +1243,16 @@ export default function CartPageClient({ products }: { products: Product[] }) {
                 rows={2}
                 value={formValues.address}
                 onChange={handleInputChange}
-                className={fieldErrors.address ? "input-error" : ""}
+                className={
+                  fieldErrors.address ? "input-error" : ""
+                }
                 placeholder={
                   lang === "ar"
                     ? "مثال: شارع الحبيب بورقيبة، تونس..."
                     : "Ex: Avenue Habib Bourguiba, Tunis..."
                 }
               />
+
               {fieldErrors.address && (
                 <p role="alert" className="field-error-msg">
                   ⚠️ {fieldErrors.address}
@@ -782,7 +1260,6 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               )}
             </div>
 
-            {/* Badge rassurant Cash On Delivery */}
             <div className="cart-security-badge">
               <span>🤝</span>
               <span>
@@ -793,12 +1270,15 @@ export default function CartPageClient({ products }: { products: Product[] }) {
             </div>
 
             {generalError && (
-              <p role="alert" className="err" style={{ padding: "8px 0" }}>
+              <p
+                role="alert"
+                className="err"
+                style={{ padding: "8px 0" }}
+              >
                 ⚠️ {generalError}
               </p>
             )}
 
-            {/* Bouton de confirmation ergonomique (large touch target, facile avec une seule main) */}
             <button
               className="btn big"
               type="submit"
@@ -814,7 +1294,11 @@ export default function CartPageClient({ products }: { products: Product[] }) {
               }}
             >
               {busy ? (
-                <span>{lang === "ar" ? "جاري الإرسال…" : "Envoi en cours…"}</span>
+                <span>
+                  {lang === "ar"
+                    ? "جاري الإرسال…"
+                    : "Envoi en cours…"}
+                </span>
               ) : (
                 <span>
                   {lang === "ar"
