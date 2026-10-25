@@ -1780,3 +1780,31 @@ textarea:focus {
     max-width: 500px;
   }
 }
+
+
+/* Desktop : description visible juste après le prix */
+@media (min-width: 761px) {
+  .mobile-description {
+    display: block;
+    border: 0;
+    padding: 0;
+    margin-top: 0;
+  }
+
+  .desktop-description {
+    display: block;
+    margin: 0 0 20px;
+  }
+
+  .mobile-description .description-toggle,
+  .mobile-description .description-content {
+    display: none;
+  }
+}
+
+/* Mobile : description repliable après les options */
+@media (max-width: 760px) {
+  .desktop-description {
+    display: none;
+  }
+}
