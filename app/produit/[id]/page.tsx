@@ -16,7 +16,9 @@ export default async function Page({
     getProducts(true),
   ]);
 
-  if (!p) notFound();
+  if (!p) {
+    notFound();
+  }
 
   return <ProductView p={p} products={products} />;
 }
