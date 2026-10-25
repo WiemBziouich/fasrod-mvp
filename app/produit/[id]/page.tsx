@@ -4,11 +4,19 @@ import ProductView from "@/components/ProductView";
 
 export const dynamic = "force-dynamic";
 
-export default async function Page({ params }: { params: { id: string } }) {
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+
   const [p, products] = await Promise.all([
-    getProduct(params.id),
+    getProduct(id),
     getProducts(true),
   ]);
+
   if (!p) notFound();
+
   return <ProductView p={p} products={products} />;
 }
