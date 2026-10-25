@@ -138,7 +138,23 @@ export default function AdminProducts({
   const [form, setForm] = useState<FormState | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const formRef = useRef<HTMLFormElement | null>(null);
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  useEffect(() => {
+    if (!form) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [form]);
+
 
   function edit(product?: Product) {
     setMessage("");
@@ -419,7 +435,22 @@ export default function AdminProducts({
       {message && <p role="status" style={{ padding: 12, background: "#f5f5f5", borderRadius: 8 }}>{message}</p>}
 
       {form && (
-        <form onSubmit={save} style={{ display: "grid", gap: 14, maxWidth: 820, margin: "20px 0 32px", padding: 20, background: "#fafafa", border: "1px solid #e7e5e4", borderRadius: 12 }}>
+                <form
+          ref={formRef}
+          onSubmit={save}
+          style={{
+            display: "grid",
+            gap: 14,
+            maxWidth: 820,
+            margin: "20px 0 32px",
+            padding: 20,
+            background: "#fafafa",
+            border: "1px solid #e7e5e4",
+            borderRadius: 12,
+            scrollMarginTop: 24,
+          }}
+        >
+
           <h3 style={{ margin: 0 }}>{products.some((p) => p.id === form.id) ? "Modifier le produit" : "Nouveau produit"}</h3>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
