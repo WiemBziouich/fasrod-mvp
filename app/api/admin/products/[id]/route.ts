@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 
@@ -24,16 +23,16 @@ const text = (value: unknown, max: number) =>
 function parseProduct(body: ProductInput) {
   const name = text(body.name, 120);
   const category = text(body.category, 80);
-  const desc = (
-  body.desc !== null &&
-  typeof body.desc === "object" &&
-  !Array.isArray(body.desc)
-)
-  ? body.desc as { fr?: unknown; ar?: unknown }
-  : {};
 
-const descFr = text(body.descFr ?? desc.fr, 2000);
-const descAr = text(body.descAr ?? desc.ar, 2000);
+  const desc =
+    body.desc !== null &&
+    typeof body.desc === "object" &&
+    !Array.isArray(body.desc)
+      ? (body.desc as { fr?: unknown; ar?: unknown })
+      : {};
+
+  const descFr = text(body.descFr ?? desc.fr, 2000);
+  const descAr = text(body.descAr ?? desc.ar, 2000);
   const price = Number(body.price);
 
   const images = Array.isArray(body.images)
@@ -137,6 +136,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
   let body: ProductInput;
 
   try {
@@ -209,6 +209,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
   try {
     const result = await db.execute({
       sql: "DELETE FROM products WHERE id = ?",
