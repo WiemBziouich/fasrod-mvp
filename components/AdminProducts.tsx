@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useEffect,
   useRef,
   useState,
@@ -138,23 +139,7 @@ export default function AdminProducts({
   const [form, setForm] = useState<FormState | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const formRef = useRef<HTMLFormElement | null>(null);
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
-
-  useEffect(() => {
-    if (!form) return;
-
-    const frame = window.requestAnimationFrame(() => {
-      formRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
-
-    return () => window.cancelAnimationFrame(frame);
-  }, [form]);
-
 
   function edit(product?: Product) {
     setMessage("");
@@ -420,37 +405,11 @@ export default function AdminProducts({
     color: "#171717",
   };
 
-  return (
-    <section style={{ color: "#171717" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 26 }}>Gestion des produits</h2>
-          <p style={{ color: "#737373", margin: "6px 0 0" }}>{products.length} produit(s) au catalogue</p>
-        </div>
-        <button className="btn" type="button" disabled={busy} onClick={() => edit()}>
-          + Ajouter un produit
-        </button>
-      </div>
+  function renderProductForm() {
+    if (!form) return null;
 
-      {message && <p role="status" style={{ padding: 12, background: "#f5f5f5", borderRadius: 8 }}>{message}</p>}
-
-      {form && (
-                <form
-          ref={formRef}
-          onSubmit={save}
-          style={{
-            display: "grid",
-            gap: 14,
-            maxWidth: 820,
-            margin: "20px 0 32px",
-            padding: 20,
-            background: "#fafafa",
-            border: "1px solid #e7e5e4",
-            borderRadius: 12,
-            scrollMarginTop: 24,
-          }}
-        >
-
+    return (
+        <form onSubmit={save} style={{ display: "grid", gap: 14, maxWidth: 820, margin: "20px 0 32px", padding: 20, background: "#fafafa", border: "1px solid #e7e5e4", borderRadius: 12, gridColumn: "1 / -1" }}> 
           <h3 style={{ margin: 0 }}>{products.some((p) => p.id === form.id) ? "Modifier le produit" : "Nouveau produit"}</h3>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
@@ -546,11 +505,30 @@ export default function AdminProducts({
             <button type="button" style={buttonStyle} disabled={busy} onClick={() => setForm(null)}>Annuler</button>
           </div>
         </form>
-      )}
+
+    );
+  }
+
+  return (
+    <section style={{ color: "#171717" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 26 }}>Gestion des produits</h2>
+          <p style={{ color: "#737373", margin: "6px 0 0" }}>{products.length} produit(s) au catalogue</p>
+        </div>
+        <button className="btn" type="button" disabled={busy} onClick={() => edit()}>
+          + Ajouter un produit
+        </button>
+      </div>
+
+      {message && <p role="status" style={{ padding: 12, background: "#f5f5f5", borderRadius: 8 }}>{message}</p>}
+
+      {form && !form.id && renderProductForm()}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 16 }}>
         {products.map((p) => (
-          <article key={p.id} style={{ border: "1px solid #e5e5e5", borderRadius: 12, padding: 12, background: "#fff", minWidth: 0 }}>
+          <Fragment key={p.id}>
+          <article style={{ border: "1px solid #e5e5e5", borderRadius: 12, padding: 12, background: "#fff", minWidth: 0 }}>
             {p.images[0] && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={p.images[0]} alt={p.name} style={{ width: "100%", height: 190, objectFit: "contain", background: "#fafafa", borderRadius: 8 }} />
@@ -565,6 +543,8 @@ export default function AdminProducts({
               <button type="button" style={{ ...buttonStyle, color: "#b91c1c" }} disabled={busy} onClick={() => remove(p)}>Supprimer</button>
             </div>
           </article>
+          {form?.id === p.id && renderProductForm()}
+          </Fragment>
         ))}
       </div>
     </section>
