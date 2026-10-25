@@ -55,7 +55,10 @@ export default function ProductView({
           }
         }
       } catch (error) {
-        console.error("Actualisation des produits échouée :", error);
+        console.error(
+          "Actualisation des produits échouée :",
+          error
+        );
       }
     }
 
@@ -110,7 +113,11 @@ export default function ProductView({
     );
 
     return [...sameCategory, ...others].slice(0, 4);
-  }, [currentProduct.id, currentProduct.category, liveProducts]);
+  }, [
+    currentProduct.id,
+    currentProduct.category,
+    liveProducts,
+  ]);
 
   function handleAddToCart() {
     addItem({
@@ -130,7 +137,7 @@ export default function ProductView({
       </Link>
 
       <div className="pdp">
-        {/* 1. Galerie principale */}
+        {/* GALERIE */}
         <div className="product-gallery">
           <div className="product-main-image">
             {galleryImages.length > 0 && (
@@ -145,7 +152,7 @@ export default function ProductView({
             )}
           </div>
 
-          {/* 2. Une miniature par couleur */}
+          {/* Une miniature par couleur */}
           <div className="thumbs color-thumbnails">
             {currentProduct.colors.map((item) => {
               const thumbnail =
@@ -181,26 +188,29 @@ export default function ProductView({
           </div>
         </div>
 
-        {/* Informations produit */}
+        {/* INFORMATIONS PRODUIT */}
         <div className="product-info">
-          {/* 3. Nom et prix */}
-            <div className="mobile-product-heading">
-               <span className="muted product-category">
-                  {currentProduct.category}
-                </span>
+          {/* Nom et prix */}
+          <div className="mobile-product-heading">
+            <span className="muted product-category">
+              {currentProduct.category}
+            </span>
 
-              <h1 className="product-title">
-                {currentProduct.name}
-              </h1>
+            <h1 className="product-title">
+              {currentProduct.name}
+            </h1>
 
-              <p className="price">{currentProduct.price} DT</p>
+            <p className="price">
+              {currentProduct.price} DT
+            </p>
 
-              <p className="muted product-description desktop-description">
-                {currentProduct.desc[lang]}
-              </p>
-            </div>
+            {/* Description visible sur desktop */}
+            <p className="muted product-description desktop-description">
+              {currentProduct.desc[lang]}
+            </p>
+          </div>
 
-          {/* 4. Couleur */}
+          {/* Couleur */}
           <section className="mobile-color-section">
             <h3>
               {t("color")}{" "}
@@ -228,7 +238,7 @@ export default function ProductView({
             </div>
           </section>
 
-          {/* 5. Taille et quantité */}
+          {/* Taille et quantité */}
           <section className="mobile-options">
             <h3>{t("size")}</h3>
 
@@ -250,6 +260,7 @@ export default function ProductView({
                       ? `, équivalent ${SIZE_GUIDE[item]}`
                       : ""
                   }`}
+                  aria-pressed={item === size}
                 >
                   <span className="size-chip-number">
                     {SIZE_GUIDE[item] ?? "—"}
@@ -281,36 +292,35 @@ export default function ProductView({
             </div>
           </section>
 
+          {/* Description repliable sur mobile */}
+          <section className="mobile-description">
+            <button
+              type="button"
+              className="description-toggle"
+              aria-expanded={descriptionOpen}
+              onClick={() =>
+                setDescriptionOpen((open) => !open)
+              }
+            >
+              <span>Détails du produit</span>
+              <span aria-hidden="true">
+                {descriptionOpen ? "−" : "+"}
+              </span>
+            </button>
 
-  <button
-    type="button"
-    className="description-toggle"
-    aria-expanded={descriptionOpen}
-    onClick={() => setDescriptionOpen((open) => !open)}
-  >
-    <span>
-      {t("details") === "details"
-        ? "Détails du produit"
-        : t("details")}
-    </span>
-    <span aria-hidden="true">
-      {descriptionOpen ? "−" : "+"}
-    </span>
-  </button>
+            <div
+              className={
+                "description-content" +
+                (descriptionOpen ? " is-open" : "")
+              }
+            >
+              <p className="muted product-description">
+                {currentProduct.desc[lang]}
+              </p>
+            </div>
+          </section>
 
-  <div
-    className={
-      "description-content" +
-      (descriptionOpen ? " is-open" : "")
-    }
-  >
-    <p className="muted product-description">
-      {currentProduct.desc[lang]}
-    </p>
-  </div>
-</section>
-
-          {/* Achat principal pour ordinateur et bas de page */}
+          {/* Formulaire d'achat principal */}
           <div className="form desktop-cart-form">
             <h2>Ajouter au panier</h2>
 
@@ -344,7 +354,7 @@ export default function ProductView({
         </div>
       </div>
 
-      {/* 7. Barre fixe mobile */}
+      {/* Barre fixe d'achat mobile */}
       <div className="mobile-sticky-cart">
         <div className="mobile-sticky-info">
           <span>{currentProduct.name}</span>
@@ -398,7 +408,9 @@ export default function ProductView({
                     {product.category}
                   </span>
 
-                  <b className="product-name">{product.name}</b>
+                  <b className="product-name">
+                    {product.name}
+                  </b>
 
                   <div className="product-bottom">
                     <span>{product.price} DT</span>
