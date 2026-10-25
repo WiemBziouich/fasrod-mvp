@@ -1759,6 +1759,8 @@ textarea:focus {
   }
 }
 
+
+/* Desktop : description après le prix, sans barre fixe */
 @media (min-width: 761px) {
   .mobile-sticky-cart {
     display: none;
@@ -1769,36 +1771,17 @@ textarea:focus {
   }
 
   .description-content {
-    display: block;
+    display: none;
   }
 
   .mobile-description {
-    margin-top: 0;
-  }
-
-  .mobile-description .product-description {
-    max-width: 500px;
-  }
-}
-
-
-/* Desktop : description visible juste après le prix */
-@media (min-width: 761px) {
-  .mobile-description {
-    display: block;
-    border: 0;
-    padding: 0;
-    margin-top: 0;
+    display: none;
   }
 
   .desktop-description {
     display: block;
     margin: 0 0 20px;
-  }
-
-  .mobile-description .description-toggle,
-  .mobile-description .description-content {
-    display: none;
+    max-width: 500px;
   }
 }
 
@@ -1806,5 +1789,28 @@ textarea:focus {
 @media (max-width: 760px) {
   .desktop-description {
     display: none;
+  }
+
+  .mobile-description {
+    display: block;
+    margin-top: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+  }
+
+  .description-toggle {
+    display: flex;
+  }
+
+  .description-content {
+    display: none;
+  }
+
+  .description-content.is-open {
+    display: block;
+  }
+
+  .mobile-sticky-cart {
+    display: flex;
   }
 }
