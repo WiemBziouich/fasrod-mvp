@@ -184,17 +184,21 @@ export default function ProductView({
         {/* Informations produit */}
         <div className="product-info">
           {/* 3. Nom et prix */}
-          <div className="mobile-product-heading">
-            <span className="muted product-category">
-              {currentProduct.category}
-            </span>
+            <div className="mobile-product-heading">
+               <span className="muted product-category">
+                  {currentProduct.category}
+                </span>
 
-            <h1 className="product-title">
-              {currentProduct.name}
-            </h1>
+              <h1 className="product-title">
+                {currentProduct.name}
+              </h1>
 
-            <p className="price">{currentProduct.price} DT</p>
-          </div>
+              <p className="price">{currentProduct.price} DT</p>
+
+              <p className="muted product-description desktop-description">
+                {currentProduct.desc[lang]}
+              </p>
+            </div>
 
           {/* 4. Couleur */}
           <section className="mobile-color-section">
