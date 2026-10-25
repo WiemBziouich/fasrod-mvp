@@ -134,8 +134,9 @@ const descAr = text(body.descAr ?? desc.ar, 2000);
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   let body: ProductInput;
 
   try {
@@ -181,7 +182,7 @@ export async function PUT(
         JSON.stringify(product.colors),
         JSON.stringify(product.sizes),
         product.active ? 1 : 0,
-        params.id,
+        id,
       ],
     });
 
@@ -205,12 +206,13 @@ export async function PUT(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const result = await db.execute({
       sql: "DELETE FROM products WHERE id = ?",
-      args: [params.id],
+      args: [id],
     });
 
     if (result.rowsAffected === 0) {
