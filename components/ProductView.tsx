@@ -5,12 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 
-import {
-  Product,
-  MAX_QTY,
-  SIZE_GUIDE,
-} from "@/lib/data";
-
+import { Product, MAX_QTY, SIZE_GUIDE } from "@/lib/data";
 import { useI18n } from "./I18n";
 import { useCart } from "./CartContext";
 
@@ -26,13 +21,14 @@ export default function ProductView({
 
   const [cartMessage, setCartMessage] = useState("");
   const [liveProduct, setLiveProduct] = useState(p);
-  const [liveProducts, setLiveProducts] = useState<Product[]>([]);
-  const currentProduct = liveProduct;
-
+  const [liveProducts, setLiveProducts] = useState<Product[]>(products);
   const [img, setImg] = useState(0);
   const [color, setColor] = useState(p.colors[0]?.name ?? "");
   const [size, setSize] = useState(p.sizes[0] ?? "");
   const [qty, setQty] = useState(1);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
+
+  const currentProduct = liveProduct;
 
   useEffect(() => {
     let cancelled = false;
@@ -52,19 +48,14 @@ export default function ProductView({
         if (!cancelled && Array.isArray(items)) {
           setLiveProducts(items);
 
-          const latest = items.find(
-            (item) => item.id === p.id
-          );
+          const latest = items.find((item) => item.id === p.id);
 
           if (latest) {
             setLiveProduct(latest);
           }
         }
       } catch (error) {
-        console.error(
-          "Actualisation des produits échouée :",
-          error
-        );
+        console.error("Actualisation des produits échouée :", error);
       }
     }
 
@@ -76,31 +67,22 @@ export default function ProductView({
   }, [p.id]);
 
   const selectedColor = currentProduct.colors.find(
-    (c) => c.name === color
+    (item) => item.name === color
   );
 
-  const galleryImages =
-    selectedColor?.images?.length
-      ? selectedColor.images
-      : currentProduct.images?.length
-        ? currentProduct.images
-        : currentProduct.colors.flatMap(
-            (c) => c.images ?? []
-          );
+  const galleryImages = selectedColor?.images?.length
+    ? selectedColor.images
+    : currentProduct.images?.length
+      ? currentProduct.images
+      : [];
 
   useEffect(() => {
     setImg(0);
   }, [color]);
 
   useEffect(() => {
-    if (
-      !currentProduct.colors.some(
-        (c) => c.name === color
-      )
-    ) {
-      setColor(
-        currentProduct.colors[0]?.name ?? ""
-      );
+    if (!currentProduct.colors.some((item) => item.name === color)) {
+      setColor(currentProduct.colors[0]?.name ?? "");
     }
 
     if (!currentProduct.sizes.includes(size)) {
@@ -115,44 +97,47 @@ export default function ProductView({
   }, [img, galleryImages.length]);
 
   const relatedProducts = useMemo(() => {
-    const sameCategory = liveProducts.filter(
-      (product) =>
-        product.id !== currentProduct.id &&
-        product.category === currentProduct.category
+    const available = liveProducts.filter(
+      (product) => product.id !== currentProduct.id
     );
 
-    if (sameCategory.length >= 4) {
-      return sameCategory.slice(0, 4);
-    }
+    const sameCategory = available.filter(
+      (product) => product.category === currentProduct.category
+    );
 
-    const others = liveProducts.filter(
-      (product) =>
-        product.id !== currentProduct.id &&
-        product.category !== currentProduct.category
+    const others = available.filter(
+      (product) => product.category !== currentProduct.category
     );
 
     return [...sameCategory, ...others].slice(0, 4);
-  }, [
-    currentProduct.id,
-    currentProduct.category,
-    liveProducts,
-  ]);
+  }, [currentProduct.id, currentProduct.category, liveProducts]);
+
+  function handleAddToCart() {
+    addItem({
+      productId: currentProduct.id,
+      color,
+      size,
+      qty,
+    });
+
+    setCartMessage("Article ajouté au panier.");
+  }
 
   return (
-    <main className="wrap">
+    <main className="wrap product-page">
       <Link href="/" className="back-link muted">
         ← {t("back")}
       </Link>
 
       <div className="pdp">
-        {/* IMAGE */}
-        <div>
+        {/* 1. Galerie principale */}
+        <div className="product-gallery">
           <div className="product-main-image">
             {galleryImages.length > 0 && (
               <Image
                 className="main"
                 src={galleryImages[img] || currentProduct.images[0]}
-                alt={currentProduct.name}
+                alt={`${currentProduct.name} - ${color}`}
                 fill
                 priority
                 sizes="(max-width: 760px) 100vw, 50vw"
@@ -160,129 +145,166 @@ export default function ProductView({
             )}
           </div>
 
-          <div className="thumbs">
-            {galleryImages.map((image, i) => (
-              <button
-                key={image}
-                type="button"
-                className={
-                  i === img
-                    ? "thumb-button on"
-                    : "thumb-button"
-                }
-                onClick={() => setImg(i)}
-              >
-                <Image
-                  src={image}
-                  alt={`${currentProduct.name} ${i + 1}`}
-                  fill
-                  sizes="70px"
-                />
-              </button>
-            ))}
+          {/* 2. Une miniature par couleur */}
+          <div className="thumbs color-thumbnails">
+            {currentProduct.colors.map((item) => {
+              const thumbnail =
+                item.images?.[0] || currentProduct.images[0];
+
+              return (
+                <button
+                  key={item.name}
+                  type="button"
+                  className={
+                    "thumb-button color-thumbnail" +
+                    (item.name === color ? " on" : "")
+                  }
+                  onClick={() => {
+                    setColor(item.name);
+                    setImg(0);
+                  }}
+                  aria-label={`Choisir la couleur ${item.name}`}
+                  aria-pressed={item.name === color}
+                  title={item.name}
+                >
+                  {thumbnail && (
+                    <Image
+                      src={thumbnail}
+                      alt={item.name}
+                      fill
+                      sizes="64px"
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* INFO */}
-        <div>
-          <span className="muted product-category">
-            {currentProduct.category}
-          </span>
+        {/* Informations produit */}
+        <div className="product-info">
+          {/* 3. Nom et prix */}
+          <div className="mobile-product-heading">
+            <span className="muted product-category">
+              {currentProduct.category}
+            </span>
 
-          <h1 className="product-title">
-            {currentProduct.name}
-          </h1>
+            <h1 className="product-title">
+              {currentProduct.name}
+            </h1>
 
-          <p className="price">
-            {currentProduct.price} DT
-          </p>
-
-          <p className="muted product-description">
-            {currentProduct.desc[lang]}
-          </p>
-
-          <div className="product-divider" />
-
-          {/* COLOR */}
-          <h3>
-            {t("color")}{" "}
-            <span className="muted">{color}</span>
-          </h3>
-
-          <div className="row">
-            {currentProduct.colors.map((c) => (
-              <button
-                key={c.name}
-                type="button"
-                aria-label={c.name}
-                className={
-                  "dot" +
-                  (c.name === color ? " on" : "")
-                }
-                style={{ background: c.hex }}
-                onClick={() => setColor(c.name)}
-              />
-            ))}
+            <p className="price">{currentProduct.price} DT</p>
           </div>
 
-          {/* SIZE */}
-          <h3>{t("size")}</h3>
+          {/* 4. Couleur */}
+          <section className="mobile-color-section">
+            <h3>
+              {t("color")}{" "}
+              <span className="muted">{color}</span>
+            </h3>
 
-          <p
-            className="size-guide"
-            aria-label="Guide des tailles"
-          >
-            Guide : XS = 34 · S = 36 · M = 38 · L = 40 · XL = 42 · XXL = 44
-          </p>
+            <div className="row">
+              {currentProduct.colors.map((item) => (
+                <button
+                  key={item.name}
+                  type="button"
+                  aria-label={`Choisir ${item.name}`}
+                  aria-pressed={item.name === color}
+                  title={item.name}
+                  className={
+                    "dot" + (item.name === color ? " on" : "")
+                  }
+                  style={{ background: item.hex }}
+                  onClick={() => {
+                    setColor(item.name);
+                    setImg(0);
+                  }}
+                />
+              ))}
+            </div>
+          </section>
 
-          <div className="row">
-            {currentProduct.sizes.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className={
-                  "chip" +
-                  (s === size ? " on" : "")
-                }
-                onClick={() => setSize(s)}
-                aria-label={`Taille ${s}${
-                  SIZE_GUIDE[s]
-                    ? `, équivalent ${SIZE_GUIDE[s]}`
-                    : ""
-                }`}
-              >
-                <span className="size-chip-number">
-                  {SIZE_GUIDE[s] ?? "—"}
-                </span>
-                <span>{s}</span>
-              </button>
-            ))}
-          </div>
+          {/* 5. Taille et quantité */}
+          <section className="mobile-options">
+            <h3>{t("size")}</h3>
 
-          {/* QUANTITY */}
-          <h3>{t("qty")}</h3>
+            <p className="size-guide" aria-label="Guide des tailles">
+              Guide : XS = 34 · S = 36 · M = 38 · L = 40 · XL = 42 · XXL = 44
+            </p>
 
-          <div className="row">
-            {Array.from(
-              { length: MAX_QTY },
-              (_, i) => i + 1
-            ).map((n) => (
-              <button
-                key={n}
-                type="button"
-                className={
-                  "chip" +
-                  (n === qty ? " on" : "")
-                }
-                onClick={() => setQty(n)}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
+            <div className="row">
+              {currentProduct.sizes.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className={
+                    "chip" + (item === size ? " on" : "")
+                  }
+                  onClick={() => setSize(item)}
+                  aria-label={`Taille ${item}${
+                    SIZE_GUIDE[item]
+                      ? `, équivalent ${SIZE_GUIDE[item]}`
+                      : ""
+                  }`}
+                >
+                  <span className="size-chip-number">
+                    {SIZE_GUIDE[item] ?? "—"}
+                  </span>
+                  <span>{item}</span>
+                </button>
+              ))}
+            </div>
 
-          {/* CART */}
-          <div className="form">
+            <h3>{t("qty")}</h3>
+
+            <div className="row">
+              {Array.from(
+                { length: MAX_QTY },
+                (_, index) => index + 1
+              ).map((number) => (
+                <button
+                  key={number}
+                  type="button"
+                  className={
+                    "chip" + (number === qty ? " on" : "")
+                  }
+                  onClick={() => setQty(number)}
+                  aria-pressed={number === qty}
+                >
+                  {number}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* 6. Description repliable sur mobile */}
+          <section className="mobile-description">
+            <button
+              type="button"
+              className="description-toggle"
+              aria-expanded={descriptionOpen}
+              onClick={() => setDescriptionOpen((open) => !open)}
+            >
+              <span>{t("details") === "details" ? "Détails du produit" : t("details")}</span>
+              <span aria-hidden="true">
+                {descriptionOpen ? "−" : "+"}
+              </span>
+            </button>
+
+            <div
+              className={
+                "description-content" +
+                (descriptionOpen ? " is-open" : "")
+              }
+            >
+              <p className="muted product-description">
+                {currentProduct.desc[lang]}
+              </p>
+            </div>
+          </section>
+
+          {/* Achat principal pour ordinateur et bas de page */}
+          <div className="form desktop-cart-form">
             <h2>Ajouter au panier</h2>
 
             <p>
@@ -303,15 +325,7 @@ export default function ProductView({
             <button
               type="button"
               className="btn big"
-              onClick={() => {
-                addItem({
-                  productId: currentProduct.id,
-                  color,
-                  size,
-                  qty,
-                });
-                setCartMessage("Article ajouté au panier.");
-              }}
+              onClick={handleAddToCart}
             >
               Ajouter au panier
             </button>
@@ -323,24 +337,33 @@ export default function ProductView({
         </div>
       </div>
 
-      {/* RELATED PRODUCTS */}
+      {/* 7. Barre fixe mobile */}
+      <div className="mobile-sticky-cart">
+        <div className="mobile-sticky-info">
+          <span>{currentProduct.name}</span>
+          <strong>{currentProduct.price * qty} DT</strong>
+        </div>
+
+        <button
+          type="button"
+          className="btn mobile-sticky-button"
+          onClick={handleAddToCart}
+        >
+          Ajouter au panier
+        </button>
+      </div>
+
+      {/* Recommandations */}
       {relatedProducts.length > 0 && (
         <section className="related">
           <div className="related-header">
             <div>
               <p className="eyebrow">FASROD</p>
-
               <h2>{t("related")}</h2>
-
-              <p className="muted">
-                {t("relatedText")}
-              </p>
+              <p className="muted">{t("relatedText")}</p>
             </div>
 
-            <Link
-              href="/"
-              className="related-link"
-            >
+            <Link href="/" className="related-link">
               {t("viewAll")} →
             </Link>
           </div>
@@ -353,12 +376,14 @@ export default function ProductView({
                 className="card"
               >
                 <div className="card-image">
-                  <Image
-                    src={product.images[0]}
-                    alt={product.name}
-                    fill
-                    sizes="(max-width: 760px) 50vw, 260px"
-                  />
+                  {product.images?.[0] && (
+                    <Image
+                      src={product.images[0]}
+                      alt={product.name}
+                      fill
+                      sizes="(max-width: 760px) 50vw, 260px"
+                    />
+                  )}
                 </div>
 
                 <div className="info">
@@ -366,9 +391,7 @@ export default function ProductView({
                     {product.category}
                   </span>
 
-                  <b className="product-name">
-                    {product.name}
-                  </b>
+                  <b className="product-name">{product.name}</b>
 
                   <div className="product-bottom">
                     <span>{product.price} DT</span>
