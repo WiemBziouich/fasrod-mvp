@@ -279,29 +279,37 @@ export default function ProductView({
 
           {/* 6. Description repliable sur mobile */}
           <section className="mobile-description">
-            <button
-              type="button"
-              className="description-toggle"
-              aria-expanded={descriptionOpen}
-              onClick={() => setDescriptionOpen((open) => !open)}
-            >
-              <span>{t("details") === "details" ? "Détails du produit" : t("details")}</span>
-              <span aria-hidden="true">
-                {descriptionOpen ? "−" : "+"}
-              </span>
-            </button>
+  <p className="muted product-description desktop-description">
+    {currentProduct.desc[lang]}
+  </p>
 
-            <div
-              className={
-                "description-content" +
-                (descriptionOpen ? " is-open" : "")
-              }
-            >
-              <p className="muted product-description">
-                {currentProduct.desc[lang]}
-              </p>
-            </div>
-          </section>
+  <button
+    type="button"
+    className="description-toggle"
+    aria-expanded={descriptionOpen}
+    onClick={() => setDescriptionOpen((open) => !open)}
+  >
+    <span>
+      {t("details") === "details"
+        ? "Détails du produit"
+        : t("details")}
+    </span>
+    <span aria-hidden="true">
+      {descriptionOpen ? "−" : "+"}
+    </span>
+  </button>
+
+  <div
+    className={
+      "description-content" +
+      (descriptionOpen ? " is-open" : "")
+    }
+  >
+    <p className="muted product-description">
+      {currentProduct.desc[lang]}
+    </p>
+  </div>
+</section>
 
           {/* Achat principal pour ordinateur et bas de page */}
           <div className="form desktop-cart-form">
