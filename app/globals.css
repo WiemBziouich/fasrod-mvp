@@ -1545,3 +1545,238 @@ textarea:focus {
   gap: 8px;
   font-size: 0.92rem;
 }
+
+
+
+/* =====================================
+   FASROD - MOBILE PRODUCT PAGE
+===================================== */
+
+.product-gallery {
+  min-width: 0;
+}
+
+.product-info {
+  min-width: 0;
+}
+
+.color-thumbnails {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  overflow-x: auto;
+  padding: 3px 2px 8px;
+  scrollbar-width: none;
+}
+
+.color-thumbnails::-webkit-scrollbar {
+  display: none;
+}
+
+.color-thumbnail {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 76px;
+  border: 2px solid var(--line);
+}
+
+.color-thumbnail.on {
+  border-color: var(--accent);
+}
+
+.mobile-sticky-cart {
+  display: none;
+}
+
+.description-toggle {
+  display: none;
+}
+
+.description-content {
+  display: block;
+}
+
+@media (max-width: 760px) {
+  .product-page {
+    padding-top: 22px;
+    padding-bottom: 110px;
+  }
+
+  .pdp {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "gallery"
+      "heading"
+      "color"
+      "options"
+      "description"
+      "cart";
+    gap: 18px;
+  }
+
+  .product-gallery {
+    grid-area: gallery;
+    width: 100%;
+  }
+
+  .product-info {
+    display: contents;
+  }
+
+  .mobile-product-heading {
+    grid-area: heading;
+    min-width: 0;
+  }
+
+  .mobile-product-heading .product-title {
+    margin-top: 4px;
+    font-size: 1.85rem;
+    line-height: 1.12;
+  }
+
+  .mobile-product-heading .price {
+    margin: 6px 0 0;
+    font-size: 1.45rem;
+  }
+
+  .product-main-image {
+    aspect-ratio: 4 / 4.5;
+    border-radius: 16px;
+  }
+
+  .color-thumbnails {
+    margin-top: 10px;
+  }
+
+  .mobile-color-section {
+    grid-area: color;
+    min-width: 0;
+  }
+
+  .mobile-color-section h3 {
+    margin-top: 0;
+  }
+
+  .mobile-options {
+    grid-area: options;
+    min-width: 0;
+  }
+
+  .mobile-options h3 {
+    margin-top: 14px;
+  }
+
+  .mobile-options .chip {
+    min-height: 44px;
+  }
+
+  .mobile-description {
+    grid-area: description;
+    min-width: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+  }
+
+  .description-toggle {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font-weight: 750;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .description-content {
+    display: none;
+  }
+
+  .description-content.is-open {
+    display: block;
+  }
+
+  .description-content p {
+    margin: 0 0 12px;
+    line-height: 1.65;
+  }
+
+  .desktop-cart-form {
+    grid-area: cart;
+    margin-top: 0;
+  }
+
+  .mobile-sticky-cart {
+    position: fixed;
+    z-index: 100;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    background: rgba(255, 255, 255, 0.97);
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(12px);
+  }
+
+  .mobile-sticky-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+  }
+
+  .mobile-sticky-info span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.78rem;
+  }
+
+  .mobile-sticky-info strong {
+    font-size: 1.05rem;
+  }
+
+  .mobile-sticky-button {
+    flex: 0 0 auto;
+    width: auto;
+    max-width: 58%;
+    padding: 13px 16px;
+    font-size: 0.88rem;
+    white-space: nowrap;
+  }
+
+  .related {
+    margin-top: 45px;
+  }
+}
+
+@media (min-width: 761px) {
+  .mobile-sticky-cart {
+    display: none;
+  }
+
+  .description-toggle {
+    display: none;
+  }
+
+  .description-content {
+    display: block;
+  }
+
+  .mobile-description {
+    margin-top: 0;
+  }
+
+  .mobile-description .product-description {
+    max-width: 500px;
+  }
+}
