@@ -281,11 +281,6 @@ export default function ProductView({
             </div>
           </section>
 
-          {/* 6. Description repliable sur mobile */}
-          <section className="mobile-description">
-  <p className="muted product-description desktop-description">
-    {currentProduct.desc[lang]}
-  </p>
 
   <button
     type="button"
