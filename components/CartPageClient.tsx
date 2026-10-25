@@ -311,9 +311,32 @@ export default function CartPageClient({
 
     if (busy || !items.length) return;
 
+    
     setGeneralError("");
 
-    if (!validate()) return;
+    if (!validate()) {
+        // Attendre que React affiche les erreurs sous les champs.
+        requestAnimationFrame(() => {
+          const firstInvalidField =
+            document.querySelector<HTMLElement>(
+              ".form .input-error"
+            );
+
+          if (firstInvalidField) {
+            firstInvalidField.scrollIntoView({
+              behavior: "smooth",
+              block: "center",
+            });
+
+            firstInvalidField.focus({
+              preventScroll: true,
+            });
+          }
+        });
+
+  return;
+}
+
 
     // Ne pas envoyer une commande si les produits n'ont pas pu
     // être vérifiés ou si un article est introuvable.
