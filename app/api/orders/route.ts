@@ -3,6 +3,11 @@ import db from "@/lib/db";
 import { WILAYAS, DELIVERY_FEE, MAX_QTY } from "@/lib/data";
 import { getProduct } from "@/lib/products";
 import { isValidDelegation } from "@/lib/tunisia-locations";
+import {
+  basketsMatch,
+  normalizeTunisiaPhone,
+} from "@/lib/duplicate-orders.mjs";
+import { isDuplicateReviewSchemaMissing } from "@/lib/duplicate-review-errors.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,13 +20,6 @@ const clean = (value: unknown, max: number) =>
     .replace(/[;\r\n\t]+/g, " ")
     .trim()
     .slice(0, max);
-
-const phoneOf = (value: unknown) => {
-  const digits = String(value ?? "")
-    .replace(/[\s.\-_/()]+/g, "")
-    .replace(/^(\+216|00216)/, "");
-  return /^\d{8}$/.test(digits) ? digits : null;
-};
 
 type RequestedItem = {
   productId?: unknown;
@@ -57,8 +55,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "empty" }, { status: 400 });
   }
 
-  const phone = phoneOf(body.phone);
-  const phone2 = body.phone2 ? phoneOf(body.phone2) : phone;
+  const phone = normalizeTunisiaPhone(body.phone);
+  const phone2 = body.phone2 ? normalizeTunisiaPhone(body.phone2) : phone;
 
   if (!phone || !phone2) {
     return NextResponse.json({ error: "phone" }, { status: 400 });
@@ -144,15 +142,81 @@ export async function POST(req: NextRequest) {
     .join(" + ");
 
   try {
-    const tx = await db.transaction();
+    const tx = await db.transaction("write");
     try {
+      const recentOrders = await tx.execute(`
+        SELECT id, phone, phone2
+        FROM orders
+        WHERE datetime(created_at) >= datetime('now', '-30 days')
+          AND duplicate_status IN ('normal', 'pending_review', 'confirmed_new')
+      `);
+      const submittedPhones = new Set([phone, phone2]);
+      const candidateIds = recentOrders.rows
+        .filter((row) => {
+          const candidatePhones = [
+            normalizeTunisiaPhone(row.phone),
+            normalizeTunisiaPhone(row.phone2),
+          ].filter((candidate): candidate is string => candidate !== null);
+          return candidatePhones.some((candidate) => submittedPhones.has(candidate));
+        })
+        .map((row) => Number(row.id));
+
+      const candidateBaskets = new Map<number, {
+        product_id: string;
+        color: string;
+        size: string;
+        qty: number;
+      }[]>();
+      for (const candidateId of candidateIds) {
+        candidateBaskets.set(candidateId, []);
+      }
+
+      for (let offset = 0; offset < candidateIds.length; offset += 500) {
+        const batch = candidateIds.slice(offset, offset + 500);
+        const placeholders = batch.map(() => "?").join(", ");
+        const candidateItems = await tx.execute({
+          sql: `
+            SELECT order_id, product_id, color, size, qty
+            FROM order_items
+            WHERE order_id IN (${placeholders})
+          `,
+          args: batch,
+        });
+        for (const row of candidateItems.rows) {
+          const basket = candidateBaskets.get(Number(row.order_id));
+          if (basket) {
+            basket.push({
+              product_id: String(row.product_id),
+              color: String(row.color),
+              size: String(row.size),
+              qty: Number(row.qty),
+            });
+          }
+        }
+      }
+
+      const submittedBasket = items.map((item) => ({
+        product_id: item.productId,
+        color: item.color,
+        size: item.size,
+        qty: item.qty,
+      }));
+      const duplicateOf =
+        candidateIds
+          .sort((left, right) => right - left)
+          .find((candidateId) =>
+            basketsMatch(submittedBasket, candidateBaskets.get(candidateId) ?? [])
+          ) ?? null;
+      const duplicateStatus = duplicateOf === null ? "normal" : "pending_review";
+
       const first = items[0];
       const result = await tx.execute({
         sql: `
           INSERT INTO orders (
             name, address, city, governorate, phone, phone2,
-            product_id, designation, qty, item_price, delivery_fee, total
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            product_id, designation, qty, item_price, delivery_fee, total,
+            duplicate_status, duplicate_of
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         args: [
           name,
@@ -167,6 +231,8 @@ export async function POST(req: NextRequest) {
           subtotal,
           DELIVERY_FEE,
           total,
+          duplicateStatus,
+          duplicateOf,
         ],
       });
 
@@ -204,6 +270,15 @@ export async function POST(req: NextRequest) {
       throw err;
     }
   } catch (error) {
+    if (isDuplicateReviewSchemaMissing(error)) {
+      return NextResponse.json(
+        {
+          error: "duplicate_review_migration_required",
+          message: "La base nécessite la migration de revue des doublons.",
+        },
+        { status: 503 }
+      );
+    }
     console.error("Order creation failed:", error);
     return NextResponse.json({ error: "order_failed" }, { status: 500 });
   }

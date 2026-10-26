@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  const tx = await db.transaction();
+  const tx = await db.transaction("write");
 
   try {
     const result = await tx.execute(`
@@ -13,6 +13,20 @@ export async function POST() {
       FROM orders
       WHERE exported_at IS NOT NULL
         AND datetime(exported_at) <= datetime('now', '-30 days')
+        AND duplicate_status = 'normal'
+        AND duplicate_of IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM orders AS referencing_order
+          WHERE referencing_order.duplicate_of = orders.id
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM order_review_history AS history
+          WHERE history.order_id = orders.id
+             OR history.previous_duplicate_of = orders.id
+             OR history.duplicate_of = orders.id
+        )
     `);
 
     const ids = (result.rows as unknown as Array<{ id: number }>).map((row) => row.id);

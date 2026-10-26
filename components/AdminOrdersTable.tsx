@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { OrderStatus } from "@/lib/duplicate-orders.mjs";
 
 type Order = {
   id: number;
@@ -14,9 +15,18 @@ type Order = {
   item_price: number;
   total: number;
   exported_at: string | null;
+  duplicate_status: OrderStatus;
+  duplicate_of: number | null;
 };
 
 const PAGE_SIZE = 10;
+
+const reviewLabel: Record<OrderStatus, string> = {
+  normal: "Normale",
+  pending_review: "À vérifier",
+  confirmed_new: "Nouvelle confirmée",
+  confirmed_duplicate: "Doublon confirmé",
+};
 
 export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
   const [page, setPage] = useState(1);
@@ -65,7 +75,7 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
         <table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              {["N°", "Date", "Client", "Téléphone", "Gouvernorat / Ville", "Adresse", "Article", "Prix articles", "Total", "Export"].map((title) => (
+              {["N°", "Date", "Client", "Téléphone", "Gouvernorat / Ville", "Adresse", "Article", "Prix articles", "Total", "Revue", "Export"].map((title) => (
                 <th key={title} style={header}>{title}</th>
               ))}
             </tr>
@@ -84,6 +94,17 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
                 <td style={{ ...cell, whiteSpace: "nowrap" }}>{order.item_price} DT</td>
                 <td style={{ ...cell, whiteSpace: "nowrap", fontWeight: 700 }}>{order.total} DT</td>
                 <td style={cell}>
+                  <span>
+                    {reviewLabel[order.duplicate_status]}
+                    {order.duplicate_of !== null && (
+                      <>
+                        <br />
+                        <small>Commande #{order.duplicate_of}</small>
+                      </>
+                    )}
+                  </span>
+                </td>
+                <td style={cell}>
                   <span style={{
                     display: "inline-block",
                     padding: "5px 9px",
@@ -101,7 +122,7 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
 
             {visibleOrders.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ ...cell, textAlign: "center", padding: 35 }}>
+                <td colSpan={11} style={{ ...cell, textAlign: "center", padding: 35 }}>
                   Aucune commande.
                 </td>
               </tr>
