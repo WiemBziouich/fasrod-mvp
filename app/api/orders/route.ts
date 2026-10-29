@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { WILAYAS, DELIVERY_FEE, MAX_QTY } from "@/lib/data";
@@ -8,12 +9,10 @@ import {
   normalizeTunisiaPhone,
 } from "@/lib/duplicate-orders.mjs";
 import { isDuplicateReviewSchemaMissing } from "@/lib/duplicate-review-errors.mjs";
+import { consumeRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const hits = new Map<string, number[]>();
-const phoneHits = new Map<string, number[]>();
 
 const clean = (value: unknown, max: number) =>
   String(value ?? "")
@@ -31,12 +30,20 @@ type RequestedItem = {
 export async function POST(req: NextRequest) {
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local";
-  const now = Date.now();
-  // Seuil IP large (120 req/10 min) pour supporter les réseaux 4G tunisiens partagés (CGNAT)
-  const recentIp = (hits.get(ip) || []).filter((time) => now - time < 600_000);
 
-  if (recentIp.length >= 120) {
-    return NextResponse.json({ error: "rate" }, { status: 429 });
+  // Shared IP rate limit: 120 requests per 10 minutes.
+  try {
+    const allowedIp = await consumeRateLimit(`ip:${ip}`, 120);
+
+    if (!allowedIp) {
+      return NextResponse.json({ error: "rate" }, { status: 429 });
+    }
+  } catch (error) {
+    console.error("IP rate limit failed:", error);
+    return NextResponse.json(
+      { error: "rate_limit_unavailable" },
+      { status: 503 }
+    );
   }
 
   const body = await req.json().catch(() => null);
@@ -45,13 +52,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid" }, { status: 400 });
   }
 
+  // Honeypot: ignore automated submissions without creating an order.
   if (body.website) {
     return NextResponse.json({ ok: true, id: 0 });
   }
 
   const requested = body.items as unknown;
 
-  if (!Array.isArray(requested) || requested.length < 1 || requested.length > 20) {
+  if (
+    !Array.isArray(requested) ||
+    requested.length < 1 ||
+    requested.length > 20
+  ) {
     return NextResponse.json({ error: "empty" }, { status: 400 });
   }
 
@@ -62,10 +74,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "phone" }, { status: 400 });
   }
 
-  // Protection anti-doublon / spam par numéro : max 4 commandes par numéro en 10 minutes
-  const recentPhone = (phoneHits.get(phone) || []).filter((time) => now - time < 600_000);
-  if (recentPhone.length >= 4) {
-    return NextResponse.json({ error: "rate" }, { status: 429 });
+  // Shared phone rate limit: 4 requests per 10 minutes.
+  try {
+    const allowedPhone = await consumeRateLimit(`phone:${phone}`, 4);
+
+    if (!allowedPhone) {
+      return NextResponse.json({ error: "rate" }, { status: 429 });
+    }
+  } catch (error) {
+    console.error("Phone rate limit failed:", error);
+    return NextResponse.json(
+      { error: "rate_limit_unavailable" },
+      { status: 503 }
+    );
   }
 
   const name = clean(body.name, 80);
@@ -101,14 +122,23 @@ export async function POST(req: NextRequest) {
     const size = typeof raw.size === "string" ? raw.size : "";
     const qty = Number(raw.qty);
 
-    if (!productId || !color || !size || !Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) {
+    if (
+      !productId ||
+      !color ||
+      !size ||
+      !Number.isInteger(qty) ||
+      qty < 1 ||
+      qty > MAX_QTY
+    ) {
       return NextResponse.json({ error: "invalid" }, { status: 400 });
     }
 
     const uniqueKey = `${productId}::${color}::${size}`;
+
     if (seen.has(uniqueKey)) {
       return NextResponse.json({ error: "invalid" }, { status: 400 });
     }
+
     seen.add(uniqueKey);
 
     const product = await getProduct(productId, true);
@@ -137,12 +167,17 @@ export async function POST(req: NextRequest) {
 
   const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
   const total = subtotal + DELIVERY_FEE;
+
   const designation = items
-    .map((item) => `${item.productName} - ${item.color} - ${item.size} x${item.qty}`)
+    .map(
+      (item) =>
+        `${item.productName} - ${item.color} - ${item.size} x${item.qty}`
+    )
     .join(" + ");
 
   try {
     const tx = await db.transaction("write");
+
     try {
       const recentOrders = await tx.execute(`
         SELECT id, phone, phone2
@@ -150,23 +185,32 @@ export async function POST(req: NextRequest) {
         WHERE datetime(created_at) >= datetime('now', '-30 days')
           AND duplicate_status IN ('normal', 'pending_review', 'confirmed_new')
       `);
+
       const submittedPhones = new Set([phone, phone2]);
+
       const candidateIds = recentOrders.rows
         .filter((row) => {
           const candidatePhones = [
             normalizeTunisiaPhone(row.phone),
             normalizeTunisiaPhone(row.phone2),
           ].filter((candidate): candidate is string => candidate !== null);
-          return candidatePhones.some((candidate) => submittedPhones.has(candidate));
+
+          return candidatePhones.some((candidate) =>
+            submittedPhones.has(candidate)
+          );
         })
         .map((row) => Number(row.id));
 
-      const candidateBaskets = new Map<number, {
-        product_id: string;
-        color: string;
-        size: string;
-        qty: number;
-      }[]>();
+      const candidateBaskets = new Map<
+        number,
+        {
+          product_id: string;
+          color: string;
+          size: string;
+          qty: number;
+        }[]
+      >();
+
       for (const candidateId of candidateIds) {
         candidateBaskets.set(candidateId, []);
       }
@@ -174,6 +218,7 @@ export async function POST(req: NextRequest) {
       for (let offset = 0; offset < candidateIds.length; offset += 500) {
         const batch = candidateIds.slice(offset, offset + 500);
         const placeholders = batch.map(() => "?").join(", ");
+
         const candidateItems = await tx.execute({
           sql: `
             SELECT order_id, product_id, color, size, qty
@@ -182,8 +227,10 @@ export async function POST(req: NextRequest) {
           `,
           args: batch,
         });
+
         for (const row of candidateItems.rows) {
           const basket = candidateBaskets.get(Number(row.order_id));
+
           if (basket) {
             basket.push({
               product_id: String(row.product_id),
@@ -201,15 +248,22 @@ export async function POST(req: NextRequest) {
         size: item.size,
         qty: item.qty,
       }));
+
       const duplicateOf =
         candidateIds
           .sort((left, right) => right - left)
           .find((candidateId) =>
-            basketsMatch(submittedBasket, candidateBaskets.get(candidateId) ?? [])
+            basketsMatch(
+              submittedBasket,
+              candidateBaskets.get(candidateId) ?? []
+            )
           ) ?? null;
-      const duplicateStatus = duplicateOf === null ? "normal" : "pending_review";
+
+      const duplicateStatus =
+        duplicateOf === null ? "normal" : "pending_review";
 
       const first = items[0];
+
       const result = await tx.execute({
         sql: `
           INSERT INTO orders (
@@ -261,10 +315,13 @@ export async function POST(req: NextRequest) {
 
       await tx.commit();
 
-      hits.set(ip, [...recentIp, now]);
-      phoneHits.set(phone, [...recentPhone, now]);
-
-      return NextResponse.json({ ok: true, id: orderId, subtotal, deliveryFee: DELIVERY_FEE, total });
+      return NextResponse.json({
+        ok: true,
+        id: orderId,
+        subtotal,
+        deliveryFee: DELIVERY_FEE,
+        total,
+      });
     } catch (err) {
       await tx.rollback();
       throw err;
@@ -279,7 +336,9 @@ export async function POST(req: NextRequest) {
         { status: 503 }
       );
     }
+
     console.error("Order creation failed:", error);
+
     return NextResponse.json({ error: "order_failed" }, { status: 500 });
   }
 }
