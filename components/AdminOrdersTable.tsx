@@ -41,30 +41,29 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
   }, [orders, currentPage]);
 
   const cell: React.CSSProperties = {
-    padding: "16px 18px",
+    padding: "10px 8px",
     textAlign: "left",
     verticalAlign: "top",
     borderBottom: "1px solid #e7e5e4",
-    fontSize: 13,
-    lineHeight: 1.6,
+    fontSize: 12,
+    lineHeight: 1.5,
+    overflowWrap: "anywhere",
   };
 
   const header: React.CSSProperties = {
     ...cell,
-    position: "sticky",
-    top: 0,
-    zIndex: 1,
     background: "#f5f5f4",
     color: "#57534e",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: 700,
     textTransform: "uppercase",
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
+    overflowWrap: "break-word",
   };
 
   const button = (active: boolean): React.CSSProperties => ({
-    minWidth: 38,
-    padding: "9px 12px",
+    minWidth: 36,
+    padding: "8px 10px",
     borderRadius: 8,
     border: active ? "1px solid #111" : "1px solid #d6d3d1",
     background: active ? "#111" : "#fff",
@@ -79,35 +78,32 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
         style={{
           width: "100%",
           maxWidth: "100%",
-          overflowX: "auto",
-          overscrollBehaviorX: "contain",
+          overflowX: "visible",
           background: "#fff",
           border: "1px solid #e7e5e4",
           borderRadius: 12,
-          WebkitOverflowScrolling: "touch",
         }}
       >
         <table
           style={{
             width: "100%",
-            minWidth: 1550,
             tableLayout: "fixed",
-            borderCollapse: "separate",
+            borderCollapse: "collapse",
             borderSpacing: 0,
           }}
         >
           <colgroup>
-            <col style={{ width: 65 }} />
-            <col style={{ width: 155 }} />
-            <col style={{ width: 140 }} />
-            <col style={{ width: 125 }} />
-            <col style={{ width: 170 }} />
-            <col style={{ width: 210 }} />
-            <col style={{ width: 360 }} />
-            <col style={{ width: 115 }} />
-            <col style={{ width: 100 }} />
-            <col style={{ width: 165 }} />
-            <col style={{ width: 125 }} />
+            <col style={{ width: "4%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "22%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "6%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "9%" }} />
           </colgroup>
 
           <thead>
@@ -137,15 +133,15 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
               <tr key={order.id}>
                 <td style={cell}>#{order.id}</td>
 
-                <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                <td style={{ ...cell, fontSize: 11 }}>
                   {order.created_at}
                 </td>
 
-                <td style={{ ...cell, overflowWrap: "anywhere", fontWeight: 600 }}>
+                <td style={{ ...cell, fontWeight: 600 }}>
                   {order.name}
                 </td>
 
-                <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                <td style={{ ...cell, fontSize: 11 }}>
                   {order.phone}
                 </td>
 
@@ -156,41 +152,30 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
                   </div>
                 </td>
 
-                <td style={{ ...cell, overflowWrap: "anywhere" }}>
-                  {order.address}
-                </td>
+                <td style={cell}>{order.address}</td>
 
-                <td
-                  style={{
-                    ...cell,
-                    whiteSpace: "normal",
-                    overflowWrap: "break-word",
-                    wordBreak: "normal",
-                    minWidth: 360,
-                  }}
-                >
+                <td style={cell}>
                   <div
                     style={{
-                      fontSize: 14,
-                      lineHeight: 1.75,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      lineHeight: 1.6,
                       color: "#292524",
-                      fontWeight: 500,
                     }}
                   >
                     {order.designation || "—"}
                   </div>
                 </td>
 
-                <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                <td style={{ ...cell, fontSize: 11 }}>
                   {order.item_price} DT
                 </td>
 
                 <td
                   style={{
                     ...cell,
-                    whiteSpace: "nowrap",
                     fontWeight: 800,
-                    fontSize: 14,
+                    fontSize: 12,
                   }}
                 >
                   {order.total} DT
@@ -200,10 +185,11 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
                   <span
                     style={{
                       display: "inline-block",
-                      padding: "5px 9px",
+                      padding: "4px 6px",
                       borderRadius: 20,
-                      fontSize: 12,
+                      fontSize: 10,
                       fontWeight: 600,
+                      lineHeight: 1.4,
                       background:
                         order.duplicate_status === "pending_review"
                           ? "#fef3c7"
@@ -224,12 +210,12 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
                   {order.duplicate_of !== null && (
                     <div
                       style={{
-                        marginTop: 6,
-                        fontSize: 11,
+                        marginTop: 5,
+                        fontSize: 10,
                         color: "#78716c",
                       }}
                     >
-                      Commande #{order.duplicate_of}
+                      #{order.duplicate_of}
                     </div>
                   )}
                 </td>
@@ -238,11 +224,10 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
                   <span
                     style={{
                       display: "inline-block",
-                      padding: "6px 10px",
+                      padding: "4px 6px",
                       borderRadius: 20,
-                      fontSize: 12,
+                      fontSize: 10,
                       fontWeight: 600,
-                      whiteSpace: "nowrap",
                       background: order.exported_at ? "#dcfce7" : "#fef3c7",
                       color: order.exported_at ? "#166534" : "#92400e",
                     }}
@@ -257,7 +242,11 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
               <tr>
                 <td
                   colSpan={11}
-                  style={{ ...cell, textAlign: "center", padding: 35 }}
+                  style={{
+                    ...cell,
+                    textAlign: "center",
+                    padding: 30,
+                  }}
                 >
                   Aucune commande.
                 </td>
@@ -313,8 +302,9 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
             .map((n, i, pages) => (
               <span key={n} style={{ display: "contents" }}>
                 {i > 0 && n - pages[i - 1] > 1 && (
-                  <span style={{ padding: "9px 3px" }}>…</span>
+                  <span style={{ padding: "8px 3px" }}>…</span>
                 )}
+
                 <button
                   type="button"
                   aria-current={n === currentPage ? "page" : undefined}
