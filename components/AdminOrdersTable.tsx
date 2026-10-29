@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useMemo, useState } from "react";
@@ -40,16 +41,19 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
   }, [orders, currentPage]);
 
   const cell: React.CSSProperties = {
-    padding: "13px 14px",
+    padding: "16px 18px",
     textAlign: "left",
     verticalAlign: "top",
-    borderBottom: "1px solid #eee",
+    borderBottom: "1px solid #e7e5e4",
     fontSize: 13,
-    lineHeight: 1.5,
+    lineHeight: 1.6,
   };
 
   const header: React.CSSProperties = {
     ...cell,
+    position: "sticky",
+    top: 0,
+    zIndex: 1,
     background: "#f5f5f4",
     color: "#57534e",
     fontSize: 11,
@@ -71,12 +75,59 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
 
   return (
     <>
-      <div style={{ overflowX: "auto", background: "#fff", border: "1px solid #e7e5e4", borderRadius: 12 }}>
-        <table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse" }}>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "100%",
+          overflowX: "auto",
+          overscrollBehaviorX: "contain",
+          background: "#fff",
+          border: "1px solid #e7e5e4",
+          borderRadius: 12,
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        <table
+          style={{
+            width: "100%",
+            minWidth: 1550,
+            tableLayout: "fixed",
+            borderCollapse: "separate",
+            borderSpacing: 0,
+          }}
+        >
+          <colgroup>
+            <col style={{ width: 65 }} />
+            <col style={{ width: 155 }} />
+            <col style={{ width: 140 }} />
+            <col style={{ width: 125 }} />
+            <col style={{ width: 170 }} />
+            <col style={{ width: 210 }} />
+            <col style={{ width: 360 }} />
+            <col style={{ width: 115 }} />
+            <col style={{ width: 100 }} />
+            <col style={{ width: 165 }} />
+            <col style={{ width: 125 }} />
+          </colgroup>
+
           <thead>
             <tr>
-              {["N°", "Date", "Client", "Téléphone", "Gouvernorat / Ville", "Adresse", "Article", "Prix articles", "Total", "Revue", "Export"].map((title) => (
-                <th key={title} style={header}>{title}</th>
+              {[
+                "N°",
+                "Date",
+                "Client",
+                "Téléphone",
+                "Gouvernorat / Ville",
+                "Adresse",
+                "Articles / Désignation",
+                "Prix articles",
+                "Total",
+                "Revue",
+                "Export",
+              ].map((title) => (
+                <th key={title} style={header}>
+                  {title}
+                </th>
               ))}
             </tr>
           </thead>
@@ -85,35 +136,117 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
             {visibleOrders.map((order) => (
               <tr key={order.id}>
                 <td style={cell}>#{order.id}</td>
-                <td style={{ ...cell, whiteSpace: "nowrap" }}>{order.created_at}</td>
-                <td style={cell}>{order.name}</td>
-                <td style={{ ...cell, whiteSpace: "nowrap" }}>{order.phone}</td>
-                <td style={cell}>{order.governorate}<br />{order.city}</td>
-                <td style={cell}>{order.address}</td>
-                <td style={cell}>{order.designation}</td>
-                <td style={{ ...cell, whiteSpace: "nowrap" }}>{order.item_price} DT</td>
-                <td style={{ ...cell, whiteSpace: "nowrap", fontWeight: 700 }}>{order.total} DT</td>
-                <td style={cell}>
-                  <span>
-                    {reviewLabel[order.duplicate_status]}
-                    {order.duplicate_of !== null && (
-                      <>
-                        <br />
-                        <small>Commande #{order.duplicate_of}</small>
-                      </>
-                    )}
-                  </span>
+
+                <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                  {order.created_at}
                 </td>
+
+                <td style={{ ...cell, overflowWrap: "anywhere", fontWeight: 600 }}>
+                  {order.name}
+                </td>
+
+                <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                  {order.phone}
+                </td>
+
                 <td style={cell}>
-                  <span style={{
-                    display: "inline-block",
-                    padding: "5px 9px",
-                    borderRadius: 20,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    background: order.exported_at ? "#dcfce7" : "#fef3c7",
-                    color: order.exported_at ? "#166534" : "#92400e",
-                  }}>
+                  <div>{order.governorate}</div>
+                  <div style={{ color: "#78716c", marginTop: 3 }}>
+                    {order.city}
+                  </div>
+                </td>
+
+                <td style={{ ...cell, overflowWrap: "anywhere" }}>
+                  {order.address}
+                </td>
+
+                <td
+                  style={{
+                    ...cell,
+                    whiteSpace: "normal",
+                    overflowWrap: "break-word",
+                    wordBreak: "normal",
+                    minWidth: 360,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 14,
+                      lineHeight: 1.75,
+                      color: "#292524",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {order.designation || "—"}
+                  </div>
+                </td>
+
+                <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                  {order.item_price} DT
+                </td>
+
+                <td
+                  style={{
+                    ...cell,
+                    whiteSpace: "nowrap",
+                    fontWeight: 800,
+                    fontSize: 14,
+                  }}
+                >
+                  {order.total} DT
+                </td>
+
+                <td style={cell}>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "5px 9px",
+                      borderRadius: 20,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      background:
+                        order.duplicate_status === "pending_review"
+                          ? "#fef3c7"
+                          : order.duplicate_status === "confirmed_duplicate"
+                            ? "#fee2e2"
+                            : "#f5f5f4",
+                      color:
+                        order.duplicate_status === "pending_review"
+                          ? "#92400e"
+                          : order.duplicate_status === "confirmed_duplicate"
+                            ? "#991b1b"
+                            : "#44403c",
+                    }}
+                  >
+                    {reviewLabel[order.duplicate_status]}
+                  </span>
+
+                  {order.duplicate_of !== null && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 11,
+                        color: "#78716c",
+                      }}
+                    >
+                      Commande #{order.duplicate_of}
+                    </div>
+                  )}
+                </td>
+
+                <td style={cell}>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "6px 10px",
+                      borderRadius: 20,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      background: order.exported_at ? "#dcfce7" : "#fef3c7",
+                      color: order.exported_at ? "#166534" : "#92400e",
+                    }}
+                  >
                     {order.exported_at ? "Exportée ✓" : "En attente"}
                   </span>
                 </td>
@@ -122,7 +255,10 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
 
             {visibleOrders.length === 0 && (
               <tr>
-                <td colSpan={11} style={{ ...cell, textAlign: "center", padding: 35 }}>
+                <td
+                  colSpan={11}
+                  style={{ ...cell, textAlign: "center", padding: 35 }}
+                >
                   Aucune commande.
                 </td>
               </tr>
@@ -131,22 +267,36 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
         </table>
       </div>
 
-      <div style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: 12,
-        marginTop: 18,
-      }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
+          marginTop: 18,
+        }}
+      >
         <span style={{ color: "#78716c", fontSize: 13 }}>
-          {orders.length === 0 ? "0 commande" : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, orders.length)} sur ${orders.length} commandes`}
+          {orders.length === 0
+            ? "0 commande"
+            : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(
+                currentPage * PAGE_SIZE,
+                orders.length
+              )} sur ${orders.length} commandes`}
         </span>
 
-        <nav aria-label="Pagination des commandes" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <nav
+          aria-label="Pagination des commandes"
+          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+        >
           <button
             type="button"
-            style={button(false)}
+            style={{
+              ...button(false),
+              opacity: currentPage === 1 ? 0.45 : 1,
+              cursor: currentPage === 1 ? "not-allowed" : "pointer",
+            }}
             disabled={currentPage === 1}
             onClick={() => setPage(currentPage - 1)}
           >
@@ -154,7 +304,12 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
           </button>
 
           {Array.from({ length: totalPages }, (_, i) => i + 1)
-            .filter((n) => n === 1 || n === totalPages || Math.abs(n - currentPage) <= 2)
+            .filter(
+              (n) =>
+                n === 1 ||
+                n === totalPages ||
+                Math.abs(n - currentPage) <= 2
+            )
             .map((n, i, pages) => (
               <span key={n} style={{ display: "contents" }}>
                 {i > 0 && n - pages[i - 1] > 1 && (
@@ -173,7 +328,11 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
 
           <button
             type="button"
-            style={button(false)}
+            style={{
+              ...button(false),
+              opacity: currentPage === totalPages ? 0.45 : 1,
+              cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+            }}
             disabled={currentPage === totalPages}
             onClick={() => setPage(currentPage + 1)}
           >
