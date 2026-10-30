@@ -13,6 +13,25 @@ async function safeEqual(a: string, b: string) {
   return diff === 0;
 }
 
+function isBlockedCrossSite(req: NextRequest) {
+  const site = req.headers.get("sec-fetch-site");
+  let crossSite = false;
+
+  if (site) {
+    crossSite = site !== "same-origin" && site !== "none";
+  } else {
+    const origin = req.headers.get("origin");
+    crossSite = Boolean(origin && origin !== req.nextUrl.origin);
+  }
+
+  if (!crossSite) return false;
+
+  return (
+    !["GET", "HEAD", "OPTIONS"].includes(req.method) ||
+    req.nextUrl.pathname.startsWith("/api/admin/export")
+  );
+}
+
 // Protège l'administration, l'export CSV et les opérations de nettoyage.
 export async function middleware(req: NextRequest) {
   const pass = process.env.ADMIN_PASSWORD;
@@ -25,7 +44,15 @@ export async function middleware(req: NextRequest) {
       if (i > -1) {
         const okUser = await safeEqual(decoded.slice(0, i), "admin");
         const okPass = await safeEqual(decoded.slice(i + 1), pass);
-        if (okUser && okPass) return NextResponse.next();
+        if (okUser && okPass) {
+          if (isBlockedCrossSite(req)) {
+            return new NextResponse("Requête refusée", {
+              status: 403,
+              headers: { "Cache-Control": "no-store" },
+            });
+          }
+          return NextResponse.next();
+        }
       }
     } catch {
       // Toute autorisation mal formée est refusée.
