@@ -39,7 +39,7 @@ export default function OldExportedOrdersCleanup({ count }: { count: number }) {
 
   async function deleteOldOrders() {
     if (!backupReady) return;
-    if (!window.confirm(`Supprimer définitivement ${count} commande(s) exportée(s) depuis plus de 30 jours ? Les commandes en attente ne seront pas supprimées.`)) return;
+    if (!window.confirm(`Supprimer définitivement ${count} commande(s) dont l’import Navex est confirmé depuis plus de 30 jours ? Les commandes non confirmées ne seront pas supprimées.`)) return;
 
     setBusy(true);
     setMessage("");
@@ -63,16 +63,19 @@ export default function OldExportedOrdersCleanup({ count }: { count: number }) {
   if (count === 0) {
     return (
       <p style={{ color: "#78716c", fontSize: 13, margin: "4px 0 0" }}>
-        Aucune commande exportée depuis plus de 30 jours.
+        Aucune commande dont l’import Navex est confirmé depuis plus de 30 jours.
       </p>
     );
   }
 
   return (
     <div style={{ marginTop: 18, padding: 16, background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12 }}>
-      <strong>{count} commande(s) exportée(s) depuis plus de 30 jours</strong>
+      <strong>
+        {count} commande(s) dont l’import Navex est confirmé depuis plus de 30 jours
+      </strong>
       <p style={{ margin: "7px 0 12px", color: "#7c2d12", fontSize: 13 }}>
-        Télécharge la sauvegarde CSV, conserve-la dans votre dossier de sauvegarde, puis supprime manuellement ces anciennes commandes.
+        Télécharge la sauvegarde CSV, conserve-la dans votre dossier de sauvegarde,
+        puis supprime ces anciennes commandes.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" className="btn" disabled={busy} onClick={downloadBackup}>

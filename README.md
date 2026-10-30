@@ -19,7 +19,26 @@ Production : `npm run build && npm start` sur un VPS (le dossier `data/` doit ê
 - `/admin/commandes` : les commandes au panier et au téléphone correspondants dans les 30 jours
   sont créées normalement puis placées en revue. Une décision admin est conservée dans
   `order_review_history`. Les commandes en revue et les doublons confirmés sont exclus des deux
-  exports Navex; les colonnes et le format Navex restent inchangés.
+  exports Navex; les colonnes et le format Navex restent inchangés. Chaque export normal crée
+  un lot récupérable et les commandes ne deviennent éligibles au nettoyage qu'après confirmation
+  de leur import Navex, puis 30 jours supplémentaires.
+
+## Migration locale des lots d'export
+La migration additive `scripts/migrate-export-batches.mjs` ajoute les identifiants de lots et
+les dates de confirmation, crée `export_batches` et son index. Elle ne modifie ni ne supprime
+les commandes existantes. Elle n'accepte que `file:data/orders.db`, vérifie que le fichier local
+existe et saute les colonnes déjà présentes.
+
+Après autorisation explicite, arrêter l'application, sauvegarder la base locale et vérifier
+qu'il s'agit bien de la base voulue. Depuis la racine du dépôt, exécuter :
+
+```powershell
+node --env-file=.env.local .\scripts\migrate-export-batches.mjs
+```
+
+Le script refuse toute URL autre que la base SQLite locale et ne permet pas de dérogation distante.
+Ne pas exécuter cette migration sur une base distante ni pendant qu'un processus utilise la base.
+Cette commande n'autorise ni ne réalise une migration de production.
 
 ## Migration locale pour la revue des doublons
 La migration additive `scripts/migrate-duplicate-review.mjs` n'est pas exécutée par le démarrage

@@ -31,9 +31,9 @@ export async function POST(req: NextRequest) {
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local";
 
-  // Shared IP rate limit: 120 requests per 10 minutes.
+  // Shared IP rate limit: 40 requests per 10 minutes.
   try {
-    const allowedIp = await consumeRateLimit(`ip:${ip}`, 120);
+    const allowedIp = await consumeRateLimit(`ip:${ip}`, 40);
 
     if (!allowedIp) {
       return NextResponse.json({ error: "rate" }, { status: 429 });
@@ -72,21 +72,6 @@ export async function POST(req: NextRequest) {
 
   if (!phone || !phone2) {
     return NextResponse.json({ error: "phone" }, { status: 400 });
-  }
-
-  // Shared phone rate limit: 4 requests per 10 minutes.
-  try {
-    const allowedPhone = await consumeRateLimit(`phone:${phone}`, 4);
-
-    if (!allowedPhone) {
-      return NextResponse.json({ error: "rate" }, { status: 429 });
-    }
-  } catch (error) {
-    console.error("Phone rate limit failed:", error);
-    return NextResponse.json(
-      { error: "rate_limit_unavailable" },
-      { status: 503 }
-    );
   }
 
   const name = clean(body.name, 80);
@@ -174,6 +159,21 @@ export async function POST(req: NextRequest) {
         `${item.productName} - ${item.color} - ${item.size} x${item.qty}`
     )
     .join(" + ");
+
+  // Consume the phone quota only after the submitted order has been validated.
+  try {
+    const allowedPhone = await consumeRateLimit(`phone:${phone}`, 4);
+
+    if (!allowedPhone) {
+      return NextResponse.json({ error: "rate" }, { status: 429 });
+    }
+  } catch (error) {
+    console.error("Phone rate limit failed:", error);
+    return NextResponse.json(
+      { error: "rate_limit_unavailable" },
+      { status: 503 }
+    );
+  }
 
   try {
     const tx = await db.transaction("write");
