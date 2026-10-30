@@ -42,6 +42,18 @@ export async function consumeRateLimit(
     ],
   });
 
+  // Nettoyage occasionnel des fenêtres expirées (environ 2 % des appels).
+  if (Math.random() < 0.02) {
+    try {
+      await db.execute({
+        sql: "DELETE FROM rate_limits WHERE window_start < ?",
+        args: [now - 2 * WINDOW_MS],
+      });
+    } catch (error) {
+      console.warn("Expired rate-limit cleanup failed:", error);
+    }
+  }
+
   const count = Number(result.rows[0]?.count ?? 0);
 
   return count > 0 && count <= limit;
