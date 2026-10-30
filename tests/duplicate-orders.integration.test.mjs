@@ -19,6 +19,11 @@ const tursoMigration = resolve(
   "scripts",
   "migrate-duplicate-review-turso.mjs"
 );
+const exportBatchMigration = resolve(
+  projectRoot,
+  "scripts",
+  "migrate-export-batches.mjs"
+);
 const nextCli = resolve(projectRoot, "node_modules", "next", "dist", "bin", "next");
 const adminAuthorization = `Basic ${Buffer.from(
   "admin:synthetic-review-test"
@@ -171,6 +176,13 @@ test(
         )
       `);
       await db.execute(`
+        CREATE TABLE rate_limits (
+          key TEXT PRIMARY KEY,
+          window_start INTEGER NOT NULL,
+          count INTEGER NOT NULL
+        )
+      `);
+      await db.execute(`
         CREATE TABLE order_items (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           order_id INTEGER NOT NULL,
@@ -295,7 +307,44 @@ test(
         { cwd: tempRoot, env: migrationEnv, encoding: "utf8" }
       );
       assert.equal(secondMigration.status, 0, "migration replay succeeds");
-      t.diagnostic("Temporary migration executed twice.");
+      const firstExportMigration = spawnSync(
+        process.execPath,
+        [exportBatchMigration],
+        { cwd: tempRoot, env: migrationEnv, encoding: "utf8" }
+      );
+      assert.equal(
+        firstExportMigration.status,
+        0,
+        "first export-batch migration succeeds"
+      );
+      const secondExportMigration = spawnSync(
+        process.execPath,
+        [exportBatchMigration],
+        { cwd: tempRoot, env: migrationEnv, encoding: "utf8" }
+      );
+      assert.equal(
+        secondExportMigration.status,
+        0,
+        "export-batch migration replay succeeds"
+      );
+      const remoteMigrationAttempt = spawnSync(
+        process.execPath,
+        [exportBatchMigration],
+        {
+          cwd: tempRoot,
+          env: safeEnvironment({
+            TURSO_DATABASE_URL: "libsql://invalid.invalid",
+            ALLOW_REMOTE: "1",
+          }),
+          encoding: "utf8",
+        }
+      );
+      assert.notEqual(
+        remoteMigrationAttempt.status,
+        0,
+        "export-batch migration refuses all remote URLs"
+      );
+      t.diagnostic("Temporary schema migrations executed twice; remote URL rejected.");
 
       const afterMigration = {
         orders: Number(
@@ -306,7 +355,9 @@ test(
         ),
         firstOrder: (
           await db.execute(
-            "SELECT id, exported_at, duplicate_status FROM orders ORDER BY id LIMIT 1"
+            `SELECT id, exported_at, duplicate_status, export_batch_id,
+                    import_confirmed_at
+             FROM orders ORDER BY id LIMIT 1`
           )
         ).rows[0],
         firstItem: (
@@ -805,14 +856,66 @@ test(
       assert.doesNotMatch(normalCsv, /Synthetic pending|Synthetic duplicate/);
       assert.match(
         normalExportResponse.headers.get("content-disposition"),
-        /^attachment; filename="commandes-\d{4}-\d{2}-\d{2}\.csv"$/
+        /^attachment; filename="commandes-\d{4}-\d{2}-\d{2}-lot-\d+\.csv"$/
       );
+      const exportBatchId = Number(
+        normalExportResponse.headers.get("x-export-batch")
+      );
+      assert.ok(Number.isSafeInteger(exportBatchId) && exportBatchId > 0);
+      const batch = await db.execute({
+        sql: "SELECT order_count, confirmed_at FROM export_batches WHERE id = ?",
+        args: [exportBatchId],
+      });
+      assert.equal(Number(batch.rows[0].order_count), 2);
+      assert.equal(batch.rows[0].confirmed_at, null);
+
+      const batchDownloadResponse = await fetchTest(
+        `${baseUrl}/api/admin/export?batch=${exportBatchId}`,
+        { headers: { Authorization: adminAuthorization } }
+      );
+      assert.equal(batchDownloadResponse.status, 200);
+      assert.equal(await batchDownloadResponse.text(), normalCsv);
+      assert.equal(
+        batchDownloadResponse.headers.get("x-export-batch"),
+        String(exportBatchId)
+      );
+
+      const confirmResponse = await fetchTest(
+        `${baseUrl}/api/admin/export/confirm`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: adminAuthorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ batchId: exportBatchId }),
+        }
+      );
+      assert.equal(confirmResponse.status, 200);
+      assert.deepEqual(await confirmResponse.json(), { ok: true, confirmed: 2 });
+      const confirmedBatch = await db.execute({
+        sql: "SELECT confirmed_at FROM export_batches WHERE id = ?",
+        args: [exportBatchId],
+      });
+      assert.ok(confirmedBatch.rows[0].confirmed_at);
+      const confirmedOrders = await db.execute({
+        sql: "SELECT COUNT(*) AS count FROM orders WHERE export_batch_id = ? AND import_confirmed_at IS NOT NULL",
+        args: [exportBatchId],
+      });
+      assert.equal(Number(confirmedOrders.rows[0].count), 2);
       assert.equal(
         normalExportResponse.headers.get("cache-control"),
         "no-store, no-cache, must-revalidate, proxy-revalidate"
       );
       assert.equal(normalExportResponse.headers.get("pragma"), "no-cache");
       assert.equal(normalExportResponse.headers.get("expires"), "0");
+
+      const emptyExportResponse = await fetchTest(`${baseUrl}/api/admin/export`, {
+        headers: { Authorization: adminAuthorization },
+      });
+      assert.equal(emptyExportResponse.status, 200);
+      assert.equal((await emptyExportResponse.text()).split("\r\n").length, 1);
+      assert.equal(emptyExportResponse.headers.get("x-export-batch"), null);
 
       for (const id of [Number(exportNormal.lastInsertRowid), Number(exportNew.lastInsertRowid)]) {
         assert.ok(
@@ -880,15 +983,20 @@ test(
         status,
         duplicateOf = null,
         withHistory = false,
-        name = "Synthetic cleanup"
+        name = "Synthetic cleanup",
+        importConfirmed = true,
+        exported = true
       ) => {
         cleanupPhoneCounter += 1;
         const inserted = await db.execute({
           sql: `INSERT INTO orders (
             name, address, city, governorate, phone, phone2, product_id,
             designation, qty, item_price, delivery_fee, total, exported_at,
+            import_confirmed_at,
             duplicate_status, duplicate_of
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '-31 days'), ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            CASE WHEN ? = 1 THEN datetime('now', '-31 days') ELSE NULL END,
+            CASE WHEN ? = 1 THEN datetime('now', '-31 days') ELSE NULL END, ?, ?)`,
           args: [
             name,
             "Synthetic address",
@@ -902,6 +1010,8 @@ test(
             30,
             8,
             38,
+            exported ? 1 : 0,
+            importConfirmed ? 1 : 0,
             status,
             duplicateOf,
           ],
@@ -960,6 +1070,21 @@ test(
         false,
         "Synthetic eligible cleanup"
       );
+      const cleanupUnconfirmed = await insertCleanupOrder(
+        "normal",
+        null,
+        false,
+        "Synthetic unconfirmed export",
+        false
+      );
+      const cleanupConfirmedWithoutExportMarker = await insertCleanupOrder(
+        "normal",
+        null,
+        false,
+        "Synthetic confirmed import without export marker",
+        true,
+        false
+      );
       const backupResponse = await fetchTest(
         `${baseUrl}/api/admin/orders/cleanup-backup`,
         { headers: { Authorization: adminAuthorization } }
@@ -968,9 +1093,10 @@ test(
       assert.equal(backupResponse.status, 200);
       const backupCsv = await backupResponse.text();
       assert.match(backupCsv, /Synthetic eligible cleanup/);
+      assert.match(backupCsv, /Synthetic confirmed import without export marker/);
       assert.doesNotMatch(
         backupCsv,
-        /Synthetic protected pending|Synthetic protected duplicate|Synthetic referenced target|Synthetic protected history/
+        /Synthetic protected pending|Synthetic protected duplicate|Synthetic referenced target|Synthetic protected history|Synthetic unconfirmed export/
       );
       const publicBackupResponse = await fetchTest(
         `${baseUrl}/api/orders/cleanup-backup`,
@@ -986,13 +1112,14 @@ test(
       );
       t.diagnostic(`Admin cleanup returned ${cleanupResponse.status}.`);
       assert.equal(cleanupResponse.status, 200);
-      assert.equal((await cleanupResponse.json()).deleted, 1);
+      assert.equal((await cleanupResponse.json()).deleted, 2);
       for (const id of [
         cleanupPending,
         cleanupDuplicate,
         cleanupReferenced,
         cleanupReference,
         cleanupInHistory,
+        cleanupUnconfirmed,
       ]) {
         assert.ok(
           (
@@ -1017,6 +1144,15 @@ test(
           await db.execute({
             sql: "SELECT id FROM orders WHERE id = ?",
             args: [cleanupEligible],
+          })
+        ).rows.length,
+        0
+      );
+      assert.equal(
+        (
+          await db.execute({
+            sql: "SELECT id FROM orders WHERE id = ?",
+            args: [cleanupConfirmedWithoutExportMarker],
           })
         ).rows.length,
         0

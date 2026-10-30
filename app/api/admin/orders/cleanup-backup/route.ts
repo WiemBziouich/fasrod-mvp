@@ -14,8 +14,8 @@ export async function GET(_req: NextRequest) {
     SELECT id, created_at, name, address, city, governorate, phone, phone2,
            designation, item_price, delivery_fee, total, exported_at
     FROM orders
-    WHERE exported_at IS NOT NULL
-      AND datetime(exported_at) <= datetime('now', '-30 days')
+    WHERE import_confirmed_at IS NOT NULL
+      AND datetime(import_confirmed_at) <= datetime('now', '-30 days')
       AND duplicate_status = 'normal'
       AND duplicate_of IS NULL
       AND NOT EXISTS (

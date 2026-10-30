@@ -3,6 +3,7 @@ import AdminOrdersTable from "@/components/AdminOrdersTable";
 import AdminNav from "@/components/AdminNav";
 import OldExportedOrdersCleanup from "@/components/OldExportedOrdersCleanup";
 import ExportCsvButton from "@/components/ExportCsvButton";
+import ExportBatchesPanel from "@/components/ExportBatchesPanel";
 import OrderReviewQueue from "@/components/OrderReviewQueue";
 import {
   EXPORTABLE_ORDER_STATUSES,
@@ -46,8 +47,21 @@ type OrderSummary = {
   items: ComparedItem[];
 };
 
+function isMissingExportBatchSchema(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /no such (?:table|column).*?(?:export_batches|export_batch_id|import_confirmed_at)/i.test(
+    message
+  );
+}
+
 export default async function AdminOrdersPage() {
-  const [result, reviewResult, exportCountResult, oldExportedResult] = await Promise.all([
+  const [
+    result,
+    reviewResult,
+    exportCountResult,
+    oldExportedResult,
+    batchesResult,
+  ] = await Promise.all([
     db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 200"),
     db.execute(`
       SELECT id, created_at, name, phone, phone2, duplicate_of
@@ -67,8 +81,8 @@ export default async function AdminOrdersPage() {
     db.execute(`
       SELECT COUNT(*) AS count
       FROM orders AS candidate
-      WHERE candidate.exported_at IS NOT NULL
-        AND datetime(candidate.exported_at) <= datetime('now', '-30 days')
+      WHERE candidate.import_confirmed_at IS NOT NULL
+        AND datetime(candidate.import_confirmed_at) <= datetime('now', '-30 days')
         AND candidate.duplicate_status = 'normal'
         AND candidate.duplicate_of IS NULL
         AND NOT EXISTS (
@@ -83,7 +97,20 @@ export default async function AdminOrdersPage() {
              OR history.previous_duplicate_of = candidate.id
              OR history.duplicate_of = candidate.id
         )
-    `),
+    `).catch((error) => {
+      if (!isMissingExportBatchSchema(error)) throw error;
+      console.warn("Export-batch migration is required for cleanup status.");
+      return null;
+    }),
+    db
+      .execute(
+        "SELECT id, created_at, order_count, confirmed_at FROM export_batches ORDER BY id DESC LIMIT 10"
+      )
+      .catch((error) => {
+        if (!isMissingExportBatchSchema(error)) throw error;
+        console.warn("Export-batch migration is required to list batches.");
+        return null;
+      }),
   ]);
   const mapOrder = (row: (typeof result.rows)[number]): Order => {
     const value = row as unknown as Record<string, unknown>;
@@ -203,8 +230,18 @@ export default async function AdminOrdersPage() {
     (exportCountResult.rows[0] as unknown as { count?: number })?.count ?? 0
   );
   const oldExportedCount = Number(
-    (oldExportedResult.rows[0] as unknown as { count?: number })?.count ?? 0
+    (oldExportedResult?.rows[0] as unknown as { count?: number })?.count ?? 0
   );
+  const batches = (batchesResult?.rows ?? []).map((row) => {
+    const value = row as unknown as Record<string, unknown>;
+    return {
+      id: Number(value.id),
+      created_at: String(value.created_at ?? ""),
+      order_count: Number(value.order_count ?? 0),
+      confirmed_at:
+        value.confirmed_at == null ? null : String(value.confirmed_at),
+    };
+  });
 
   const cell: React.CSSProperties = {
     padding: "13px 14px",
@@ -320,6 +357,8 @@ export default async function AdminOrdersPage() {
         Le prix exporté comprend les articles et les frais de livraison de 8 DT.
         Vérifiez les montants avant l’import Navex.
       </p>
+
+      <ExportBatchesPanel batches={batches} />
 
       <OldExportedOrdersCleanup count={oldExportedCount} />
 

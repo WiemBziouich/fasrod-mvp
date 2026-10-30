@@ -38,11 +38,14 @@ export default function ExportCsvButton({
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `commandes-${new Date().toISOString().slice(0, 10)}.csv`;
+      const disposition = response.headers.get("content-disposition");
+      const filename = disposition?.match(/filename="([^"]+)"/i)?.[1];
+      link.download =
+        filename ?? `commandes-${new Date().toISOString().slice(0, 10)}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 
       router.refresh();
     } catch (cause) {

@@ -11,8 +11,8 @@ export async function POST() {
     const result = await tx.execute(`
       SELECT id
       FROM orders
-      WHERE exported_at IS NOT NULL
-        AND datetime(exported_at) <= datetime('now', '-30 days')
+      WHERE import_confirmed_at IS NOT NULL
+        AND datetime(import_confirmed_at) <= datetime('now', '-30 days')
         AND duplicate_status = 'normal'
         AND duplicate_of IS NULL
         AND NOT EXISTS (
