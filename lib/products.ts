@@ -26,10 +26,20 @@ const mapProduct = (row: ProductRow): Product => ({
   active: Boolean(row.active),
 });
 
+export function isProductSortOrderMissing(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /no such column:\s*(?:products\.)?sort_order/i.test(message);
+}
+
 export const getProducts = async (activeOnly = false): Promise<Product[]> => {
-  const result = await db.execute(
-    `SELECT * FROM products ${activeOnly ? "WHERE active = 1" : ""} ORDER BY rowid`
-  );
+  const query = `SELECT * FROM products ${activeOnly ? "WHERE active = 1" : ""}`;
+  let result;
+  try {
+    result = await db.execute(`${query} ORDER BY sort_order ASC, rowid`);
+  } catch (error) {
+    if (!isProductSortOrderMissing(error)) throw error;
+    result = await db.execute(`${query} ORDER BY rowid`);
+  }
   return (result.rows as unknown as ProductRow[]).map(mapProduct);
 };
 
