@@ -1,7 +1,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
-import { getProducts } from "@/lib/products";
+import { getProducts, isProductSortOrderMissing } from "@/lib/products";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -82,6 +82,7 @@ function parseProduct(body: ProductInput) {
 
   if (
     !/^[a-z0-9-]{2,80}$/.test(id) ||
+    id === "reorder" ||
     !name ||
     !category ||
     !descFr ||
@@ -160,14 +161,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let tx: Awaited<ReturnType<typeof db.transaction>> | null = null;
   try {
-    await db.execute({
+    tx = await db.transaction("write");
+    const minimumResult = await tx.execute(
+      "SELECT MIN(sort_order) AS minimum FROM products"
+    );
+    const minimum = minimumResult.rows[0]?.minimum;
+    const sortOrder = minimum == null ? 0 : Number(minimum) - 10;
+
+    await tx.execute({
       sql: `
         INSERT INTO products (
           id, name, category, price, desc_fr, desc_ar,
-          images, colors, sizes, active
+          images, colors, sizes, active, sort_order
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
         product.id,
@@ -180,16 +189,29 @@ export async function POST(req: NextRequest) {
         JSON.stringify(product.colors),
         JSON.stringify(product.sizes),
         product.active ? 1 : 0,
+        sortOrder,
       ],
     });
+    await tx.commit();
 
     return NextResponse.json(
       { ok: true, id: product.id },
       { status: 201 }
     );
   } catch (error) {
+    if (tx) await tx.rollback();
     const message =
       error instanceof Error ? error.message : "";
+
+    if (isProductSortOrderMissing(error)) {
+      return NextResponse.json(
+        {
+          error: "product_sort_order_migration_required",
+          message: "La migration de l'ordre des produits est requise.",
+        },
+        { status: 503 }
+      );
+    }
 
     if (message.includes("UNIQUE constraint failed")) {
       return NextResponse.json(

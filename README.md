@@ -23,6 +23,26 @@ Production : `npm run build && npm start` sur un VPS (le dossier `data/` doit ê
   un lot récupérable et les commandes ne deviennent éligibles au nettoyage qu'après confirmation
   de leur import Navex, puis 30 jours supplémentaires.
 
+## Ordre d'affichage des produits
+Avant de déployer le code qui utilise l'ordre personnalisé, ajoutez la colonne aux bases
+SQLite/Turso. La migration `scripts/migrate-product-sort-order.sql` contient deux instructions
+à exécuter **une par une** dans la console SQL de Turso : d'abord l'ajout de
+`products.sort_order`, puis l'attribution des positions aux lignes à 0. Cette attribution
+reprend l'ordre d'affichage historique (`rowid`) et utilise des pas de 10; les positions
+déjà renseignées sont conservées.
+
+Pour une base locale, après sauvegarde et vérification de `data/orders.db`, exécuter depuis
+la racine du dépôt :
+
+```powershell
+node .\scripts\migrate-product-sort-order.mjs
+```
+
+Le script local n'accepte que `file:data/orders.db`, vérifie que le fichier existe et n'est
+pas un lien symbolique, et peut être relancé sans dommage. Il ne charge aucun fichier `.env`
+et refuse toute URL distante. Ne lancez pas ce script contre Turso : utilisez uniquement les
+deux instructions SQL ci-dessus, avant le déploiement du code.
+
 ## Migration locale des lots d'export
 La migration additive `scripts/migrate-export-batches.mjs` ajoute les identifiants de lots et
 les dates de confirmation, crée `export_batches` et son index. Elle ne modifie ni ne supprime

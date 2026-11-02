@@ -139,6 +139,8 @@ export default function AdminProducts({
   const [form, setForm] = useState<FormState | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [orderDirty, setOrderDirty] = useState(false);
+  const [orderSaving, setOrderSaving] = useState(false);
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   function edit(product?: Product) {
@@ -148,6 +150,63 @@ export default function AdminProducts({
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => current ? { ...current, [key]: value } : current);
+  }
+
+  function moveProduct(productId: string, destination: number) {
+    const currentIndex = products.findIndex((product) => product.id === productId);
+    if (
+      currentIndex < 0 ||
+      destination < 0 ||
+      destination >= products.length ||
+      currentIndex === destination
+    ) {
+      return;
+    }
+
+    const next = [...products];
+    const [product] = next.splice(currentIndex, 1);
+    next.splice(destination, 0, product);
+    setProducts(next);
+    setOrderDirty(true);
+    setMessage("");
+  }
+
+  async function saveOrder() {
+    if (!orderDirty || busy || orderSaving) return;
+
+    setOrderSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/products/reorder", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ ids: products.map((product) => product.id) }),
+      });
+      await readResponse(response);
+      setOrderDirty(false);
+      announceProductChange();
+
+      const refreshed = await fetch("/api/admin/products", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (!refreshed.ok) throw new Error("refresh_failed");
+      const data = await refreshed.json();
+      if (!Array.isArray(data)) throw new Error("refresh_failed");
+      setProducts(data);
+      setMessage("Ordre des produits enregistré.");
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "";
+      const messages: Record<string, string> = {
+        products_changed: "La liste des produits a changé. Recharge la page avant de réessayer.",
+        product_sort_order_migration_required: "La migration de l'ordre des produits est requise.",
+        refresh_failed: "Ordre enregistré, mais impossible de recharger la liste. Actualise la page.",
+      };
+      setMessage(messages[reason] || "Impossible d'enregistrer l'ordre des produits.");
+    } finally {
+      setOrderSaving(false);
+    }
   }
 
   function updateVariant(key: string, changes: Partial<Variant>) {
@@ -168,8 +227,8 @@ export default function AdminProducts({
         setMessage(`${file.name} : utilise JPG, PNG ou WebP.`);
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        setMessage(`${file.name} dépasse 5 Mo.`);
+      if (file.size > 4 * 1000 * 1000) {
+        setMessage(`${file.name} dépasse 4 Mo. Réduis la photo (par exemple avec squoosh.app) puis réessaie.`);
         return;
       }
     }
@@ -311,7 +370,7 @@ export default function AdminProducts({
       setProducts((current) =>
         editing
           ? current.map((p) => p.id === id ? updated : p)
-          : [...current, updated]
+          : [updated, ...current]
       );
       announceProductChange();
       setForm(null);
@@ -404,6 +463,11 @@ export default function AdminProducts({
     cursor: "pointer",
     color: "#171717",
   };
+  const orderButtonStyle = {
+    ...buttonStyle,
+    minHeight: 44,
+    touchAction: "manipulation" as const,
+  };
 
   function renderProductForm() {
     if (!form) return null;
@@ -465,7 +529,7 @@ export default function AdminProducts({
                     disabled={busy}
                     onChange={(e) => uploadImages(variant.key, e.target.files)}
                   />
-                  <span style={{ fontSize: 12, color: "#737373" }}>JPG, PNG ou WebP, maximum 5 Mo par photo.</span>
+                  <span style={{ fontSize: 12, color: "#737373" }}>JPG, PNG ou WebP, maximum 4 Mo par photo.</span>
                 </label>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(110px,1fr))", gap: 10 }}>
@@ -501,8 +565,8 @@ export default function AdminProducts({
           </label>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn" type="submit" disabled={busy}>{busy ? "Enregistrement…" : "Enregistrer le produit"}</button>
-            <button type="button" style={buttonStyle} disabled={busy} onClick={() => setForm(null)}>Annuler</button>
+            <button className="btn" type="submit" disabled={busy || orderSaving}>{busy ? "Enregistrement…" : "Enregistrer le produit"}</button>
+            <button type="button" style={buttonStyle} disabled={busy || orderSaving} onClick={() => setForm(null)}>Annuler</button>
           </div>
         </form>
 
@@ -516,7 +580,7 @@ export default function AdminProducts({
           <h2 style={{ margin: 0, fontSize: 26 }}>Gestion des produits</h2>
           <p style={{ color: "#737373", margin: "6px 0 0" }}>{products.length} produit(s) au catalogue</p>
         </div>
-        <button className="btn" type="button" disabled={busy} onClick={() => edit()}>
+        <button className="btn" type="button" disabled={busy || orderSaving} onClick={() => edit()}>
           + Ajouter un produit
         </button>
       </div>
@@ -525,8 +589,19 @@ export default function AdminProducts({
 
       {form && !form.id && renderProductForm()}
 
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+        <button
+          className="btn"
+          type="button"
+          disabled={!orderDirty || busy || orderSaving}
+          onClick={saveOrder}
+        >
+          {orderSaving ? "Enregistrement de l'ordre…" : "Enregistrer l'ordre"}
+        </button>
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 16 }}>
-        {products.map((p) => (
+        {products.map((p, index) => (
           <Fragment key={p.id}>
           <article style={{ border: "1px solid #e5e5e5", borderRadius: 12, padding: 12, background: "#fff", minWidth: 0 }}>
             {p.images[0] && (
@@ -535,12 +610,18 @@ export default function AdminProducts({
             )}
             <h3 style={{ margin: "12px 0 4px" }}>{p.name}</h3>
             <p style={{ margin: "0 0 6px", color: "#737373", fontSize: 12 }}>{p.id}</p>
+            <p style={{ margin: "0 0 10px", fontWeight: 600 }}>Position {index + 1}</p>
             <p><strong>{p.price} DT</strong> · {p.category}</p>
             <p style={{ fontSize: 13 }}>{p.active ? "● Actif" : "○ Masqué"} · {p.colors.length} couleur(s)</p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              <button type="button" style={orderButtonStyle} disabled={busy || orderSaving || index === 0} onClick={() => moveProduct(p.id, index - 1)}>Monter</button>
+              <button type="button" style={orderButtonStyle} disabled={busy || orderSaving || index === products.length - 1} onClick={() => moveProduct(p.id, index + 1)}>Descendre</button>
+              <button type="button" style={orderButtonStyle} disabled={busy || orderSaving || index === 0} onClick={() => moveProduct(p.id, 0)}>Tout en haut</button>
+            </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button type="button" style={buttonStyle} disabled={busy} onClick={() => edit(p)}>Modifier</button>
-              <button type="button" style={buttonStyle} disabled={busy} onClick={() => toggle(p)}>{p.active ? "Masquer" : "Activer"}</button>
-              <button type="button" style={{ ...buttonStyle, color: "#b91c1c" }} disabled={busy} onClick={() => remove(p)}>Supprimer</button>
+              <button type="button" style={buttonStyle} disabled={busy || orderSaving} onClick={() => edit(p)}>Modifier</button>
+              <button type="button" style={buttonStyle} disabled={busy || orderSaving} onClick={() => toggle(p)}>{p.active ? "Masquer" : "Activer"}</button>
+              <button type="button" style={{ ...buttonStyle, color: "#b91c1c" }} disabled={busy || orderSaving} onClick={() => remove(p)}>Supprimer</button>
             </div>
           </article>
           {form?.id === p.id && renderProductForm()}
