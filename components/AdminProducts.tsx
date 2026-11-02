@@ -227,8 +227,8 @@ export default function AdminProducts({
         setMessage(`${file.name} : utilise JPG, PNG ou WebP.`);
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        setMessage(`${file.name} dépasse 5 Mo.`);
+      if (file.size > 4 * 1000 * 1000) {
+        setMessage(`${file.name} dépasse 4 Mo. Réduis la photo (par exemple avec squoosh.app) puis réessaie.`);
         return;
       }
     }
@@ -529,7 +529,7 @@ export default function AdminProducts({
                     disabled={busy}
                     onChange={(e) => uploadImages(variant.key, e.target.files)}
                   />
-                  <span style={{ fontSize: 12, color: "#737373" }}>JPG, PNG ou WebP, maximum 5 Mo par photo.</span>
+                  <span style={{ fontSize: 12, color: "#737373" }}>JPG, PNG ou WebP, maximum 4 Mo par photo.</span>
                 </label>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(110px,1fr))", gap: 10 }}>
