@@ -37,6 +37,15 @@ export async function POST() {
     }
 
     const placeholders = ids.map(() => "?").join(", ");
+    try {
+      await tx.execute({
+        sql: `DELETE FROM order_edit_log WHERE order_id IN (${placeholders})`,
+        args: ids,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/no such table:\s*order_edit_log/i.test(message)) throw error;
+    }
     await tx.execute({
       sql: `DELETE FROM order_items WHERE order_id IN (${placeholders})`,
       args: ids,

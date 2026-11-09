@@ -16,10 +16,12 @@ Production : `npm run build && npm start` sur un VPS (le dossier `data/` doit ê
 - `/admin` (utilisateur `admin`, mot de passe = `ADMIN_PASSWORD`) : liste + bouton d'export CSV.
   L'export ne prend que les commandes **non exportées** puis les marque (pas de doublons).
   `prix` = articles × quantité + 8 DT, pré-rempli : l'employé le vérifie avant l'import Navex.
-- `/admin/commandes` : les commandes au panier et au téléphone correspondants dans les 30 jours
-  sont créées normalement puis placées en revue. Une décision admin est conservée dans
-  `order_review_history`. Les commandes en revue et les doublons confirmés sont exclus des deux
-  exports Navex; les colonnes et le format Navex restent inchangés. Chaque export normal crée
+- `/admin/commandes` : un panier identique associé au même téléphone dans les 30 jours, ou toute
+  commande du même téléphone dans l'heure précédente, place la nouvelle commande en revue.
+  Une décision admin est conservée dans `order_review_history`. L'admin peut aussi rattacher
+  une commande non exportée comme doublon d'une autre, la restaurer ou modifier ses coordonnées
+  et articles. Les commandes en revue et les doublons confirmés sont exclues des deux exports
+  Navex; les colonnes et le format Navex restent inchangés. Chaque export normal crée
   un lot récupérable et les commandes ne deviennent éligibles au nettoyage qu'après confirmation
   de leur import Navex, puis 30 jours supplémentaires.
 
@@ -151,6 +153,19 @@ Références : [ALTER TABLE Turso](https://docs.turso.tech/sql-reference/stateme
 [PRAGMA Turso](https://docs.turso.tech/sql-reference/pragmas.md),
 [création de base Turso](https://docs.turso.tech/cli/db/create.md) et
 [guide de migration/import Turso](https://docs.turso.tech/cloud/migrate-to-turso.md).
+
+## Modifier et rattacher les commandes
+La route d'édition n'autorise que les commandes non exportées. Avant son déploiement, créer
+`order_edit_log` dans la base locale avec `node .\scripts\migrate-order-edit-log.mjs` (le
+script refuse les URL distantes). Pour une base Turso, le schéma correspondant est fourni dans
+`scripts/migrate-order-edit-log.sql`; il n'est pas appliqué automatiquement. Ne pas exécuter de
+migration distante sans autorisation et procédure dédiées.
+
+Dans `/admin/commandes`, une commande normale ou confirmée nouvelle peut être marquée comme
+doublon d'une autre commande; l'opération et sa restauration sont enregistrées dans
+`order_review_history`. Les modifications autorisées sont enregistrées avant/après dans
+`order_edit_log`. Les références et les articles sont validés par le serveur; les prix ne sont
+jamais repris de l'interface.
 
 ## Modifier le catalogue
 Depuis `/admin`, ajouter ou modifier les produits, leurs prix, images, couleurs et tailles,

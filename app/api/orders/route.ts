@@ -1,31 +1,17 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
-import { WILAYAS, DELIVERY_FEE, MAX_QTY } from "@/lib/data";
-import { getProduct } from "@/lib/products";
-import { isValidDelegation } from "@/lib/tunisia-locations";
+import { DELIVERY_FEE } from "@/lib/data";
 import {
   basketsMatch,
   normalizeTunisiaPhone,
 } from "@/lib/duplicate-orders.mjs";
 import { isDuplicateReviewSchemaMissing } from "@/lib/duplicate-review-errors.mjs";
 import { consumeRateLimit } from "@/lib/rate-limit";
+import { validateOrderInput } from "@/lib/order-input";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const clean = (value: unknown, max: number) =>
-  String(value ?? "")
-    .replace(/[;\r\n\t]+/g, " ")
-    .trim()
-    .slice(0, max);
-
-type RequestedItem = {
-  productId?: unknown;
-  color?: unknown;
-  size?: unknown;
-  qty?: unknown;
-};
 
 export async function POST(req: NextRequest) {
   const ip =
@@ -57,98 +43,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, id: 0 });
   }
 
-  const requested = body.items as unknown;
-
-  if (
-    !Array.isArray(requested) ||
-    requested.length < 1 ||
-    requested.length > 20
-  ) {
-    return NextResponse.json({ error: "empty" }, { status: 400 });
+  const validated = await validateOrderInput(body as Record<string, unknown>);
+  if (!validated.ok) {
+    return NextResponse.json({ error: validated.error }, { status: 400 });
   }
-
-  const phone = normalizeTunisiaPhone(body.phone);
-  const phone2 = body.phone2 ? normalizeTunisiaPhone(body.phone2) : phone;
-
-  if (!phone || !phone2) {
-    return NextResponse.json({ error: "phone" }, { status: 400 });
-  }
-
-  const name = clean(body.name, 80);
-  const address = clean(body.address, 200);
-  const city = clean(body.city, 60);
-  const governorate = WILAYAS.find((w) => w.v === body.governorate)?.v;
-
-  if (
-    name.length < 3 ||
-    address.length < 5 ||
-    city.length < 2 ||
-    !governorate ||
-    !isValidDelegation(governorate, city)
-  ) {
-    return NextResponse.json({ error: "fields" }, { status: 400 });
-  }
-
-  const items: {
-    productId: string;
-    productName: string;
-    color: string;
-    size: string;
-    qty: number;
-    unitPrice: number;
-    lineTotal: number;
-  }[] = [];
-
-  const seen = new Set<string>();
-
-  for (const raw of requested as RequestedItem[]) {
-    const productId = typeof raw.productId === "string" ? raw.productId : "";
-    const color = typeof raw.color === "string" ? raw.color : "";
-    const size = typeof raw.size === "string" ? raw.size : "";
-    const qty = Number(raw.qty);
-
-    if (
-      !productId ||
-      !color ||
-      !size ||
-      !Number.isInteger(qty) ||
-      qty < 1 ||
-      qty > MAX_QTY
-    ) {
-      return NextResponse.json({ error: "invalid" }, { status: 400 });
-    }
-
-    const uniqueKey = `${productId}::${color}::${size}`;
-
-    if (seen.has(uniqueKey)) {
-      return NextResponse.json({ error: "invalid" }, { status: 400 });
-    }
-
-    seen.add(uniqueKey);
-
-    const product = await getProduct(productId, true);
-
-    if (!product) {
-      return NextResponse.json({ error: "unavailable" }, { status: 400 });
-    }
-
-    if (
-      !product.sizes.includes(size) ||
-      !product.colors.some((entry) => entry.name === color)
-    ) {
-      return NextResponse.json({ error: "invalid" }, { status: 400 });
-    }
-
-    items.push({
-      productId: product.id,
-      productName: product.name,
-      color,
-      size,
-      qty,
-      unitPrice: product.price,
-      lineTotal: product.price * qty,
-    });
-  }
+  const { name, address, city, governorate, phone, phone2, items } =
+    validated.value;
 
   const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
   const total = subtotal + DELIVERY_FEE;
@@ -180,26 +80,32 @@ export async function POST(req: NextRequest) {
 
     try {
       const recentOrders = await tx.execute(`
-        SELECT id, phone, phone2
+        SELECT id, phone, phone2,
+          CASE
+            WHEN datetime(created_at) >= datetime('now', '-60 minutes') THEN 1
+            ELSE 0
+          END AS within_hour
         FROM orders
         WHERE datetime(created_at) >= datetime('now', '-30 days')
           AND duplicate_status IN ('normal', 'pending_review', 'confirmed_new')
+        ORDER BY datetime(created_at) DESC, id DESC
       `);
 
       const submittedPhones = new Set([phone, phone2]);
 
-      const candidateIds = recentOrders.rows
-        .filter((row) => {
-          const candidatePhones = [
-            normalizeTunisiaPhone(row.phone),
-            normalizeTunisiaPhone(row.phone2),
-          ].filter((candidate): candidate is string => candidate !== null);
+      const phoneMatches = recentOrders.rows.filter((row) => {
+        const candidatePhones = [
+          normalizeTunisiaPhone(row.phone),
+          normalizeTunisiaPhone(row.phone2),
+        ].filter((candidate): candidate is string => candidate !== null);
 
-          return candidatePhones.some((candidate) =>
-            submittedPhones.has(candidate)
-          );
-        })
-        .map((row) => Number(row.id));
+        return candidatePhones.some((candidate) =>
+          submittedPhones.has(candidate)
+        );
+      });
+      const candidateIds = phoneMatches.map((row) => Number(row.id));
+      const recentPhoneDuplicate =
+        phoneMatches.find((row) => Number(row.within_hour) === 1) ?? null;
 
       const candidateBaskets = new Map<
         number,
@@ -250,6 +156,7 @@ export async function POST(req: NextRequest) {
       }));
 
       const duplicateOf =
+        (recentPhoneDuplicate ? Number(recentPhoneDuplicate.id) : null) ??
         candidateIds
           .sort((left, right) => right - left)
           .find((candidateId) =>
@@ -257,7 +164,8 @@ export async function POST(req: NextRequest) {
               submittedBasket,
               candidateBaskets.get(candidateId) ?? []
             )
-          ) ?? null;
+          ) ??
+        null;
 
       const duplicateStatus =
         duplicateOf === null ? "normal" : "pending_review";

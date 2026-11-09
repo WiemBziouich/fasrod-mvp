@@ -24,6 +24,11 @@ const exportBatchMigration = resolve(
   "scripts",
   "migrate-export-batches.mjs"
 );
+const orderEditMigration = resolve(
+  projectRoot,
+  "scripts",
+  "migrate-order-edit-log.mjs"
+);
 const nextCli = resolve(projectRoot, "node_modules", "next", "dist", "bin", "next");
 const adminAuthorization = `Basic ${Buffer.from(
   "admin:synthetic-review-test"
@@ -327,6 +332,30 @@ test(
         0,
         "export-batch migration replay succeeds"
       );
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const editMigration = spawnSync(process.execPath, [orderEditMigration], {
+          cwd: tempRoot,
+          env: migrationEnv,
+          encoding: "utf8",
+        });
+        assert.equal(editMigration.status, 0, editMigration.stderr);
+      }
+      const remoteEditMigration = spawnSync(
+        process.execPath,
+        [orderEditMigration],
+        {
+          cwd: tempRoot,
+          env: safeEnvironment({
+            TURSO_DATABASE_URL: "libsql://invalid.invalid",
+          }),
+          encoding: "utf8",
+        }
+      );
+      assert.notEqual(
+        remoteEditMigration.status,
+        0,
+        "order-edit migration refuses remote URLs"
+      );
       const remoteMigrationAttempt = spawnSync(
         process.execPath,
         [exportBatchMigration],
@@ -538,11 +567,22 @@ test(
       assert.equal(
         (
           await db.execute({
-            sql: "SELECT duplicate_status FROM orders WHERE id = ?",
+            sql: "SELECT duplicate_status, duplicate_of FROM orders WHERE id = ?",
             args: [differentProduct.body.id],
           })
         ).rows[0].duplicate_status,
-        "normal"
+        "pending_review"
+      );
+      assert.equal(
+        Number(
+          (
+            await db.execute({
+              sql: "SELECT duplicate_of FROM orders WHERE id = ?",
+              args: [differentProduct.body.id],
+            })
+          ).rows[0].duplicate_of
+        ),
+        exact.body.id
       );
 
       const secondaryBase = await postOrder("21000001", [shirt], "22000001");
@@ -619,6 +659,181 @@ test(
         ).rows[0].duplicate_status,
         "normal"
       );
+      const twoHoursAgo = await db.execute({
+        sql: `INSERT INTO orders (
+          created_at, name, address, city, governorate, phone, phone2,
+          product_id, designation, qty, item_price, delivery_fee, total
+        ) VALUES (datetime('now', '-2 hours'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          "Synthetic two-hour candidate",
+          "Synthetic address",
+          "ARIANA VILLE",
+          "Ariana",
+          "25000002",
+          "25000002",
+          "synthetic-shirt",
+          "Synthetic Shirt",
+          1,
+          30,
+          8,
+          38,
+        ],
+      });
+      await db.execute({
+        sql: `INSERT INTO order_items (
+          order_id, product_id, product_name, color, size, qty, unit_price, line_total
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          Number(twoHoursAgo.lastInsertRowid),
+          "synthetic-shirt",
+          "Synthetic Shirt",
+          "Black",
+          "M",
+          1,
+          30,
+          30,
+        ],
+      });
+      const afterTwoHours = await postOrder("25000002", [pants]);
+      assert.equal(afterTwoHours.response.status, 200);
+      assert.equal(
+        (
+          await db.execute({
+            sql: "SELECT duplicate_status FROM orders WHERE id = ?",
+            args: [afterTwoHours.body.id],
+          })
+        ).rows[0].duplicate_status,
+        "normal"
+      );
+      const twoHourExact = await db.execute({
+        sql: `INSERT INTO orders (
+          created_at, name, address, city, governorate, phone, phone2,
+          product_id, designation, qty, item_price, delivery_fee, total
+        ) VALUES (datetime('now', '-2 hours'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          "Synthetic two-hour exact match",
+          "Synthetic address",
+          "ARIANA VILLE",
+          "Ariana",
+          "25000003",
+          "25000003",
+          "synthetic-shirt",
+          "Synthetic Shirt",
+          1,
+          30,
+          8,
+          38,
+        ],
+      });
+      await db.execute({
+        sql: `INSERT INTO order_items (
+          order_id, product_id, product_name, color, size, qty, unit_price, line_total
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          Number(twoHourExact.lastInsertRowid),
+          "synthetic-shirt",
+          "Synthetic Shirt",
+          "Black",
+          "M",
+          1,
+          30,
+          30,
+        ],
+      });
+      const exactAfterTwoHours = await postOrder("25000003", [shirt]);
+      assert.equal(exactAfterTwoHours.response.status, 200);
+      assert.equal(
+        (
+          await db.execute({
+            sql: "SELECT duplicate_status FROM orders WHERE id = ?",
+            args: [exactAfterTwoHours.body.id],
+          })
+        ).rows[0].duplicate_status,
+        "pending_review"
+      );
+      const recentByTime = await db.execute({
+        sql: `INSERT INTO orders (
+          created_at, name, address, city, governorate, phone, phone2,
+          product_id, designation, qty, item_price, delivery_fee, total
+        ) VALUES (datetime('now', '-20 minutes'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          "Synthetic latest-by-time order",
+          "Synthetic address",
+          "ARIANA VILLE",
+          "Ariana",
+          "25000004",
+          "25000004",
+          "synthetic-pants",
+          "Synthetic Pants",
+          1,
+          40,
+          8,
+          48,
+        ],
+      });
+      await db.execute({
+        sql: `INSERT INTO order_items (
+          order_id, product_id, product_name, color, size, qty, unit_price, line_total
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          Number(recentByTime.lastInsertRowid),
+          "synthetic-pants",
+          "Synthetic Pants",
+          "Blue",
+          "L",
+          1,
+          40,
+          40,
+        ],
+      });
+      const olderByTime = await db.execute({
+        sql: `INSERT INTO orders (
+          created_at, name, address, city, governorate, phone, phone2,
+          product_id, designation, qty, item_price, delivery_fee, total
+        ) VALUES (datetime('now', '-45 minutes'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          "Synthetic older exact order",
+          "Synthetic address",
+          "ARIANA VILLE",
+          "Ariana",
+          "25000004",
+          "25000004",
+          "synthetic-shirt",
+          "Synthetic Shirt",
+          1,
+          30,
+          8,
+          38,
+        ],
+      });
+      await db.execute({
+        sql: `INSERT INTO order_items (
+          order_id, product_id, product_name, color, size, qty, unit_price, line_total
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          Number(olderByTime.lastInsertRowid),
+          "synthetic-shirt",
+          "Synthetic Shirt",
+          "Black",
+          "M",
+          1,
+          30,
+          30,
+        ],
+      });
+      const latestOrderReference = await postOrder("25000004", [shirt]);
+      assert.equal(latestOrderReference.response.status, 200);
+      assert.equal(
+        Number(
+          (
+            await db.execute({
+              sql: "SELECT duplicate_of FROM orders WHERE id = ?",
+              args: [latestOrderReference.body.id],
+            })
+          ).rows[0].duplicate_of
+        ),
+        Number(recentByTime.lastInsertRowid)
+      );
       t.diagnostic("Order detection scenarios passed.");
 
       const unauthenticated = await fetchTest(`${baseUrl}/api/admin/orders/review`, {
@@ -659,6 +874,7 @@ test(
       assert.match(adminHtml, /Synthetic historical 0/);
       assert.match(adminHtml, /Téléphone correspondant :/);
       assert.match(adminHtml, /Panier identique :/);
+      assert.match(adminHtml, /Différences entre les paniers/);
       t.diagnostic("Authenticated review queue and access controls passed.");
 
       const keepPending = await fetchTest(`${baseUrl}/api/admin/orders/review`, {
@@ -752,6 +968,182 @@ test(
       assert.equal(duplicateHistory.rows[0].reviewed_by, "admin");
       t.diagnostic("Review decisions and history persistence passed.");
 
+      const editBody = {
+        name: "Synthetic edited buyer",
+        address: "Updated synthetic address",
+        city: "ARIANA VILLE",
+        governorate: "Ariana",
+        phone: "20000002",
+        phone2: "20000002",
+        items: [pants],
+      };
+      const editResponse = await fetchTest(
+        `${baseUrl}/api/admin/orders/${differentPhone.body.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify(editBody),
+        }
+      );
+      assert.equal(editResponse.status, 200);
+      const editedOrder = await db.execute({
+        sql: `SELECT name, product_id, qty, item_price, delivery_fee, total,
+                     duplicate_status
+              FROM orders WHERE id = ?`,
+        args: [differentPhone.body.id],
+      });
+      assert.deepEqual(
+        Object.values(editedOrder.rows[0]),
+        ["Synthetic edited buyer", "synthetic-pants", 1, 40, 8, 48, "normal"]
+      );
+      const editedItem = await db.execute({
+        sql: "SELECT product_id, size, unit_price, line_total FROM order_items WHERE order_id = ?",
+        args: [differentPhone.body.id],
+      });
+      assert.deepEqual(
+        Object.values(editedItem.rows[0]),
+        ["synthetic-pants", "L", 40, 40]
+      );
+      const editLog = await db.execute({
+        sql: "SELECT before_json, after_json FROM order_edit_log WHERE order_id = ?",
+        args: [differentPhone.body.id],
+      });
+      assert.equal(editLog.rows.length, 1);
+      assert.equal(JSON.parse(editLog.rows[0].before_json).items[0].product_id, "synthetic-shirt");
+      assert.equal(JSON.parse(editLog.rows[0].after_json).total, 48);
+
+      const invalidSizeEdit = await fetchTest(
+        `${baseUrl}/api/admin/orders/${differentPhone.body.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify({
+            ...editBody,
+            items: [{ ...pants, size: "UNKNOWN" }],
+          }),
+        }
+      );
+      assert.equal(invalidSizeEdit.status, 400);
+
+      const missingSupersedeContentType = await fetchTest(
+        `${baseUrl}/api/admin/orders/supersede`,
+        {
+          method: "POST",
+          headers: { Authorization: adminAuthorization },
+          body: JSON.stringify({
+            orderId: differentPhone.body.id,
+            keepOrderId: first.body.id,
+          }),
+        }
+      );
+      assert.equal(missingSupersedeContentType.status, 400);
+
+      const marked = await fetchTest(`${baseUrl}/api/admin/orders/supersede`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: adminAuthorization,
+        },
+        body: JSON.stringify({
+          orderId: differentPhone.body.id,
+          keepOrderId: first.body.id,
+        }),
+      });
+      assert.equal(marked.status, 200);
+      assert.deepEqual(await marked.json(), {
+        ok: true,
+        orderId: differentPhone.body.id,
+        status: "confirmed_duplicate",
+        duplicateOf: first.body.id,
+      });
+      const markedHistory = await db.execute({
+        sql: `SELECT previous_status, new_status, duplicate_of, reviewed_by
+              FROM order_review_history WHERE order_id = ? ORDER BY id DESC LIMIT 1`,
+        args: [differentPhone.body.id],
+      });
+      assert.deepEqual(
+        Object.values(markedHistory.rows[0]),
+        ["normal", "confirmed_duplicate", first.body.id, "admin"]
+      );
+
+      const cycleSource = await db.execute({
+        sql: `INSERT INTO orders (
+          name, address, city, governorate, phone, phone2, product_id,
+          designation, qty, item_price, delivery_fee, total
+        ) VALUES ('Synthetic cycle source', 'Synthetic address', 'ARIANA VILLE',
+                  'Ariana', '28000001', '28000001', 'synthetic-shirt',
+                  'Synthetic Shirt', 1, 30, 8, 38)`,
+      });
+      const cycleSourceId = Number(cycleSource.lastInsertRowid);
+      const cycleKeep = await db.execute({
+        sql: `INSERT INTO orders (
+          name, address, city, governorate, phone, phone2, product_id,
+          designation, qty, item_price, delivery_fee, total,
+          duplicate_status, duplicate_of
+        ) VALUES ('Synthetic cycle reference', 'Synthetic address', 'ARIANA VILLE',
+                  'Ariana', '28000002', '28000002', 'synthetic-shirt',
+                  'Synthetic Shirt', 1, 30, 8, 38, 'pending_review', ?)`,
+        args: [cycleSourceId],
+      });
+      const cycleResponse = await fetchTest(
+        `${baseUrl}/api/admin/orders/supersede`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify({
+            orderId: cycleSourceId,
+            keepOrderId: Number(cycleKeep.lastInsertRowid),
+          }),
+        }
+      );
+      assert.equal(cycleResponse.status, 409);
+
+      const restored = await fetchTest(`${baseUrl}/api/admin/orders/supersede`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: adminAuthorization,
+        },
+        body: JSON.stringify({
+          orderId: differentPhone.body.id,
+          action: "restore",
+        }),
+      });
+      assert.equal(restored.status, 200);
+      assert.deepEqual(
+        (
+          await db.execute({
+            sql: "SELECT duplicate_status, duplicate_of FROM orders WHERE id = ?",
+            args: [differentPhone.body.id],
+          })
+        ).rows.map((row) => [row.duplicate_status, row.duplicate_of]),
+        [["confirmed_new", null]]
+      );
+      const confirmedNewMarked = await fetchTest(
+        `${baseUrl}/api/admin/orders/supersede`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify({
+            orderId: differentPhone.body.id,
+            keepOrderId: first.body.id,
+          }),
+        }
+      );
+      assert.equal(confirmedNewMarked.status, 200);
+
       await db.execute(
         "UPDATE orders SET exported_at = '2026-10-25 00:00:00'"
       );
@@ -838,6 +1230,42 @@ test(
           "confirmed_duplicate",
         ],
       });
+      const manuallyMarkedExport = await db.execute({
+        sql: `INSERT INTO orders (
+          name, address, city, governorate, phone, phone2, product_id,
+          designation, qty, item_price, delivery_fee, total
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          "Synthetic manually duplicate",
+          "Synthetic address",
+          "ARIANA VILLE",
+          "Ariana",
+          "26000005",
+          "26000005",
+          "synthetic-shirt",
+          "Synthetic Shirt",
+          1,
+          30,
+          8,
+          38,
+        ],
+      });
+      const manuallyMarkedId = Number(manuallyMarkedExport.lastInsertRowid);
+      const manuallyMarkedResponse = await fetchTest(
+        `${baseUrl}/api/admin/orders/supersede`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify({
+            orderId: manuallyMarkedId,
+            keepOrderId: Number(exportNew.lastInsertRowid),
+          }),
+        }
+      );
+      assert.equal(manuallyMarkedResponse.status, 200);
 
       const normalExportResponse = await fetchTest(`${baseUrl}/api/admin/export`, {
         headers: { Authorization: adminAuthorization },
@@ -853,7 +1281,10 @@ test(
       assert.match(normalCsv, /Synthetic confirmed/);
       assert.match(normalCsv, /Synthetic  address/);
       assert.match(normalCsv, /Synthetic item/);
-      assert.doesNotMatch(normalCsv, /Synthetic pending|Synthetic duplicate/);
+      assert.doesNotMatch(
+        normalCsv,
+        /Synthetic pending|Synthetic duplicate|Synthetic manually duplicate/
+      );
       assert.match(
         normalExportResponse.headers.get("content-disposition"),
         /^attachment; filename="commandes-\d{4}-\d{2}-\d{2}-lot-\d+\.csv"$/
@@ -903,12 +1334,82 @@ test(
         args: [exportBatchId],
       });
       assert.equal(Number(confirmedOrders.rows[0].count), 2);
-      assert.equal(
-        normalExportResponse.headers.get("cache-control"),
-        "no-store, no-cache, must-revalidate, proxy-revalidate"
+      assert.match(
+        normalExportResponse.headers.get("cache-control") ?? "",
+        /\bno-store\b/
       );
       assert.equal(normalExportResponse.headers.get("pragma"), "no-cache");
       assert.equal(normalExportResponse.headers.get("expires"), "0");
+
+      const exportedEdit = await fetchTest(
+        `${baseUrl}/api/admin/orders/${Number(exportNormal.lastInsertRowid)}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify(editBody),
+        }
+      );
+      assert.equal(exportedEdit.status, 409);
+      const exportedSupersede = await fetchTest(
+        `${baseUrl}/api/admin/orders/supersede`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify({
+            orderId: Number(exportNormal.lastInsertRowid),
+            keepOrderId: Number(exportNew.lastInsertRowid),
+          }),
+        }
+      );
+      assert.equal(exportedSupersede.status, 409);
+
+      const batchOnlyTarget = await db.execute({
+        sql: `INSERT INTO orders (
+          name, address, city, governorate, phone, phone2, product_id,
+          designation, qty, item_price, delivery_fee, total
+        ) VALUES ('Synthetic batch-only export', 'Synthetic address',
+                  'ARIANA VILLE', 'Ariana', '26000006', '26000006',
+                  'synthetic-shirt', 'Synthetic Shirt', 1, 30, 8, 38)`,
+      });
+      const batchOnlyId = Number(batchOnlyTarget.lastInsertRowid);
+      await db.execute({
+        sql: "UPDATE orders SET export_batch_id = ? WHERE id = ?",
+        args: [exportBatchId, batchOnlyId],
+      });
+      const batchOnlySupersede = await fetchTest(
+        `${baseUrl}/api/admin/orders/supersede`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify({
+            orderId: batchOnlyId,
+            keepOrderId: Number(exportNew.lastInsertRowid),
+          }),
+        }
+      );
+      assert.equal(batchOnlySupersede.status, 409);
+      const batchOnlyEdit = await fetchTest(
+        `${baseUrl}/api/admin/orders/${batchOnlyId}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify(editBody),
+        }
+      );
+      assert.equal(batchOnlyEdit.status, 409);
+      await db.execute("DELETE FROM orders WHERE id = ?", [batchOnlyId]);
 
       const emptyExportResponse = await fetchTest(`${baseUrl}/api/admin/export`, {
         headers: { Authorization: adminAuthorization },
@@ -959,7 +1460,10 @@ test(
       assert.equal(allExportResponse.status, 200);
       const allCsv = await allExportResponse.text();
       assert.equal(allCsv.split("\r\n")[0], expectedHeader);
-      assert.doesNotMatch(allCsv, /Synthetic pending|Synthetic duplicate/);
+      assert.doesNotMatch(
+        allCsv,
+        /Synthetic pending|Synthetic duplicate|Synthetic manually duplicate/
+      );
       assert.match(allExportResponse.headers.get("content-disposition"), /^attachment;/);
       const allAfter = (
         await db.execute(
@@ -1070,6 +1574,17 @@ test(
         false,
         "Synthetic eligible cleanup"
       );
+      await db.execute({
+        sql: `
+          INSERT INTO order_edit_log (order_id, before_json, after_json)
+          VALUES (?, ?, ?)
+        `,
+        args: [
+          cleanupEligible,
+          JSON.stringify({ name: "Synthetic previous personal data" }),
+          JSON.stringify({ name: "Synthetic current personal data" }),
+        ],
+      });
       const cleanupUnconfirmed = await insertCleanupOrder(
         "normal",
         null,
@@ -1146,6 +1661,17 @@ test(
             args: [cleanupEligible],
           })
         ).rows.length,
+        0
+      );
+      assert.equal(
+        Number(
+          (
+            await db.execute({
+              sql: "SELECT COUNT(*) AS n FROM order_edit_log WHERE order_id = ?",
+              args: [cleanupEligible],
+            })
+          ).rows[0].n
+        ),
         0
       );
       assert.equal(
