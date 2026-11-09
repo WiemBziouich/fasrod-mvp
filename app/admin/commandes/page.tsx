@@ -12,6 +12,7 @@ import {
   type BasketItem,
   type OrderStatus,
 } from "@/lib/duplicate-orders.mjs";
+import { getProducts } from "@/lib/products";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -22,6 +23,7 @@ type Order = {
   created_at: string;
   name: string;
   phone: string;
+  phone2: string;
   governorate: string;
   city: string;
   address: string;
@@ -29,8 +31,10 @@ type Order = {
   item_price: number;
   total: number;
   exported_at: string | null;
+  export_batch_id: number | null;
   duplicate_status: OrderStatus;
   duplicate_of: number | null;
+  items: ComparedItem[];
 };
 
 type ComparedItem = BasketItem & {
@@ -119,6 +123,7 @@ export default async function AdminOrdersPage() {
       created_at: String(value.created_at ?? ""),
       name: String(value.name ?? ""),
       phone: String(value.phone ?? ""),
+      phone2: String(value.phone2 ?? ""),
       governorate: String(value.governorate ?? ""),
       city: String(value.city ?? ""),
       address: String(value.address ?? ""),
@@ -126,11 +131,42 @@ export default async function AdminOrdersPage() {
       item_price: Number(value.item_price ?? 0),
       total: Number(value.total ?? 0),
       exported_at: value.exported_at == null ? null : String(value.exported_at),
+      export_batch_id:
+        value.export_batch_id == null ? null : Number(value.export_batch_id),
       duplicate_status: String(value.duplicate_status) as OrderStatus,
       duplicate_of: value.duplicate_of == null ? null : Number(value.duplicate_of),
+      items: [],
     };
   };
   const rows: Order[] = result.rows.map(mapOrder);
+  const products = await getProducts(true);
+  const orderIds = rows.map((order) => order.id);
+  if (orderIds.length) {
+    const placeholders = orderIds.map(() => "?").join(", ");
+    const itemResult = await db.execute({
+      sql: `
+        SELECT order_id, product_id, product_name, color, size, qty
+        FROM order_items
+        WHERE order_id IN (${placeholders})
+        ORDER BY order_id, id
+      `,
+      args: orderIds,
+    });
+    const ordersById = new Map(rows.map((order) => [order.id, order]));
+    for (const row of itemResult.rows) {
+      const value = row as unknown as Record<string, unknown>;
+      const order = ordersById.get(Number(value.order_id));
+      if (order) {
+        order.items.push({
+          product_id: String(value.product_id),
+          product_name: String(value.product_name ?? ""),
+          color: String(value.color),
+          size: String(value.size),
+          qty: Number(value.qty),
+        });
+      }
+    }
+  }
   const reviewOrders = reviewResult.rows.map((row) => {
     const value = row as unknown as Record<string, unknown>;
     return {
@@ -364,7 +400,7 @@ export default async function AdminOrdersPage() {
 
       <OrderReviewQueue orders={pendingReviewOrders} />
       
-      <AdminOrdersTable orders={rows} />
+      <AdminOrdersTable orders={rows} products={products} />
 
     </main>
   );

@@ -34,6 +34,38 @@ type PendingOrder = {
   cartMatch: boolean;
 };
 
+function basketDifferences(order: PendingOrder) {
+  if (!order.candidate) return [];
+  const keyOf = (item: ComparedItem) =>
+    JSON.stringify([item.product_id, item.color, item.size]);
+  const candidateItems = new Map(
+    order.candidate.items.map((item) => [keyOf(item), item])
+  );
+  const orderItems = new Map(order.items.map((item) => [keyOf(item), item]));
+  const differences: string[] = [];
+
+  for (const item of order.items) {
+    const candidateItem = candidateItems.get(keyOf(item));
+    if (!candidateItem) {
+      differences.push(
+        `Seulement dans #${order.id} : ${item.product_name} — ${item.color} — ${item.size} × ${item.qty}`
+      );
+    } else if (item.qty !== candidateItem.qty) {
+      differences.push(
+        `Quantité différente — ${item.product_name}, ${item.color}, ${item.size} : #${order.id} × ${item.qty}, #${order.candidate.id} × ${candidateItem.qty}`
+      );
+    }
+  }
+  for (const item of order.candidate.items) {
+    if (!orderItems.has(keyOf(item))) {
+      differences.push(
+        `Seulement dans #${order.candidate.id} : ${item.product_name} — ${item.color} — ${item.size} × ${item.qty}`
+      );
+    }
+  }
+  return differences;
+}
+
 const actions = [
   { status: "confirmed_new", label: "Confirmer nouvelle commande" },
   { status: "pending_review", label: "Garder en attente" },
@@ -68,10 +100,17 @@ export default function OrderReviewQueue({
       });
       const result = await response.json().catch(() => null);
       if (!response.ok) {
+        const messages: Record<string, string> = {
+          invalid_duplicate_reference:
+            "La commande de référence a déjà été traitée comme doublon, ou elle a changé. Traite d’abord la plus récente, puis recharge la page.",
+          review_already_resolved:
+            "Cette commande a déjà été traitée. Recharge la page.",
+          order_not_found:
+            "Cette commande n’existe plus. Recharge la page.",
+        };
         throw new Error(
-          result?.error === "duplicate_reference_not_found"
-            ? "La commande correspondante n’existe plus."
-            : `La décision n’a pas été enregistrée (HTTP ${response.status}).`
+          messages[result?.error] ??
+            `La décision n’a pas été enregistrée (HTTP ${response.status}).`
         );
       }
       router.refresh();
@@ -178,6 +217,30 @@ export default function OrderReviewQueue({
                   )}
                 </div>
               </div>
+              {order.candidate && !order.cartMatch && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: 10,
+                    border: "1px solid #fed7aa",
+                    borderRadius: 8,
+                    background: "#fff7ed",
+                  }}
+                >
+                  <strong>Différences entre les paniers</strong>
+                  {basketDifferences(order).length ? (
+                    <ul style={{ margin: "6px 0 0", paddingLeft: 20 }}>
+                      {basketDifferences(order).map((difference) => (
+                        <li key={difference}>{difference}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p style={{ margin: "6px 0 0" }}>
+                      Le contenu des lignes diffère ou manque dans les données enregistrées.
+                    </p>
+                  )}
+                </div>
+              )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
                 {actions.map((action) => (
                   <button
@@ -203,6 +266,7 @@ export default function OrderReviewQueue({
                         action.status === "pending_review" ? "#292524" : "#fff",
                       cursor: "pointer",
                       fontWeight: 600,
+                      minHeight: 44,
                     }}
                   >
                     {busyOrder === order.id ? "Enregistrement…" : action.label}
