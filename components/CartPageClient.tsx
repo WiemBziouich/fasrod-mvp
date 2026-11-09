@@ -16,6 +16,7 @@ import {
   type Product,
 } from "@/lib/data";
 import { getDelegations } from "@/lib/tunisia-locations";
+import { shouldCallCustomerToday } from "@/lib/tunisia-time.mjs";
 import { useCart, cartKey } from "./CartContext";
 import { useI18n } from "./I18n";
 
@@ -468,9 +469,7 @@ export default function CartPageClient({
 
   // Écran de confirmation de commande.
   if (completedOrder) {
-    const currentHour = new Date().getHours();
-    const isCallingToday =
-      currentHour >= 9 && currentHour < 18;
+    const isCallingToday = shouldCallCustomerToday();
 
     const wilayaObj = WILAYAS.find(
       (wilaya) => wilaya.v === completedOrder.governorate

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { formatTunisiaDateTime } from "@/lib/tunisia-time.mjs";
 
 type ComparedItem = {
   product_id: string;
@@ -130,7 +131,7 @@ export default function OrderReviewQueue({
                 Commande #{order.id} — {order.name}
               </h3>
               <p style={{ margin: 0, color: "#57534e", fontSize: 13 }}>
-                {order.created_at} · Téléphones {order.phone}
+                {formatTunisiaDateTime(order.created_at)} · Téléphones {order.phone}
                 {order.phone2 && order.phone2 !== order.phone
                   ? ` / ${order.phone2}`
                   : ""}
@@ -161,7 +162,7 @@ export default function OrderReviewQueue({
                   {order.candidate ? (
                     <>
                       <p style={{ margin: "6px 0 0", color: "#57534e" }}>
-                        {order.candidate.created_at} · {order.candidate.name} ·{" "}
+                        {formatTunisiaDateTime(order.candidate.created_at)} · {order.candidate.name} ·{" "}
                         {order.candidate.phone}
                         {order.candidate.phone2 &&
                         order.candidate.phone2 !== order.candidate.phone

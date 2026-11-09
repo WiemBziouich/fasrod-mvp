@@ -3,6 +3,7 @@
 
 import { useMemo, useState } from "react";
 import type { OrderStatus } from "@/lib/duplicate-orders.mjs";
+import { formatTunisiaDateTime } from "@/lib/tunisia-time.mjs";
 
 type Order = {
   id: number;
@@ -134,7 +135,7 @@ export default function AdminOrdersTable({ orders }: { orders: Order[] }) {
                 <td style={cell}>#{order.id}</td>
 
                 <td style={{ ...cell, fontSize: 11 }}>
-                  {order.created_at}
+                  {formatTunisiaDateTime(order.created_at)}
                 </td>
 
                 <td style={{ ...cell, fontWeight: 600 }}>

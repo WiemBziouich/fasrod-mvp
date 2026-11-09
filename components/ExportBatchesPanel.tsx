@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatTunisiaDateTime } from "@/lib/tunisia-time.mjs";
 
 type Batch = {
   id: number;
@@ -96,11 +97,11 @@ export default function ExportBatchesPanel({ batches }: { batches: Batch[] }) {
             {batches.map((batch) => (
               <tr key={batch.id}>
                 <td style={td}>#{batch.id}</td>
-                <td style={td}>{batch.created_at}</td>
+                <td style={td}>{formatTunisiaDateTime(batch.created_at)}</td>
                 <td style={td}>{batch.order_count}</td>
                 <td style={td}>
                   {batch.confirmed_at
-                    ? `Import confirmé (${batch.confirmed_at})`
+                    ? `Import confirmé (${formatTunisiaDateTime(batch.confirmed_at)})`
                     : "À confirmer"}
                 </td>
                 <td style={td}>
