@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { formatTunisiaDateTime } from "@/lib/tunisia-time.mjs";
+import { formatOrderDesignation } from "@/lib/order-designation.mjs";
 
 type ComparedItem = {
   product_id: string;
@@ -124,11 +125,7 @@ export default function OrderReviewQueue({
   const itemList = (items: ComparedItem[]) =>
     items.length ? (
       <ul style={{ margin: "6px 0 0", paddingLeft: 20 }}>
-        {items.map((item, index) => (
-          <li key={`${item.product_id}-${item.color}-${item.size}-${index}`}>
-            {item.product_name} — {item.color} — {item.size} × {item.qty}
-          </li>
-        ))}
+        <li>{formatOrderDesignation(items)}</li>
       </ul>
     ) : (
       <p style={{ margin: "6px 0 0", color: "#78716c" }}>

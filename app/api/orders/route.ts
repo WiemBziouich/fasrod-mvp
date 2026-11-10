@@ -9,6 +9,7 @@ import {
 import { isDuplicateReviewSchemaMissing } from "@/lib/duplicate-review-errors.mjs";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { validateOrderInput } from "@/lib/order-input";
+import { formatOrderDesignation } from "@/lib/order-designation.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,12 +54,7 @@ export async function POST(req: NextRequest) {
   const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
   const total = subtotal + DELIVERY_FEE;
 
-  const designation = items
-    .map(
-      (item) =>
-        `${item.productName} - ${item.color} - ${item.size} x${item.qty}`
-    )
-    .join(" + ");
+  const designation = formatOrderDesignation(items);
 
   // Consume the phone quota only after the submitted order has been validated.
   try {

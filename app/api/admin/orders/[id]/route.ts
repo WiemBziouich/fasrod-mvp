@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { DELIVERY_FEE } from "@/lib/data";
 import { validateOrderInput } from "@/lib/order-input";
+import { formatOrderDesignation } from "@/lib/order-designation.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,12 +45,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     validated.value;
   const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
   const total = subtotal + DELIVERY_FEE;
-  const designation = items
-    .map(
-      (item) =>
-        `${item.productName} - ${item.color} - ${item.size} x${item.qty}`
-    )
-    .join(" + ");
+  const designation = formatOrderDesignation(items);
   const qty = items.reduce((sum, item) => sum + item.qty, 0);
 
   let tx: Awaited<ReturnType<typeof db.transaction>> | null = null;

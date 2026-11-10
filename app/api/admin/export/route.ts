@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import db from "@/lib/db";
 import { EXPORTABLE_ORDER_STATUSES } from "@/lib/duplicate-orders.mjs";
 import { isDuplicateReviewSchemaMissing } from "@/lib/duplicate-review-errors.mjs";
+import { formatOrderDesignation } from "@/lib/order-designation.mjs";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -54,6 +55,53 @@ function toCsv(rows: Record<string, unknown>[]) {
   return [HEADER, ...lines].join("\r\n");
 }
 
+async function formatDesignations(
+  rows: Record<string, unknown>[]
+): Promise<Record<string, unknown>[]> {
+  if (!rows.length) return rows;
+
+  const itemsByOrder = new Map<number, {
+    product_name: string;
+    color: string;
+    size: string;
+    qty: number;
+  }[]>();
+
+  for (let offset = 0; offset < rows.length; offset += 500) {
+    const ids = rows.slice(offset, offset + 500).map((row) => Number(row.id));
+    const placeholders = ids.map(() => "?").join(", ");
+    const itemResult = await db.execute({
+      sql: `
+        SELECT order_id, product_name, color, size, qty
+        FROM order_items
+        WHERE order_id IN (${placeholders})
+        ORDER BY order_id, id
+      `,
+      args: ids,
+    });
+
+    for (const row of itemResult.rows) {
+      const item = row as unknown as {
+        order_id: number;
+        product_name: string;
+        color: string;
+        size: string;
+        qty: number;
+      };
+      const items = itemsByOrder.get(Number(item.order_id)) ?? [];
+      items.push(item);
+      itemsByOrder.set(Number(item.order_id), items);
+    }
+  }
+
+  return rows.map((row) => {
+    const items = itemsByOrder.get(Number(row.id));
+    return items?.length
+      ? { ...row, designation: formatOrderDesignation(items) }
+      : row;
+  });
+}
+
 function migrationRequired() {
   return Response.json(
     {
@@ -84,8 +132,8 @@ export async function GET(req: NextRequest) {
       if (!result.rows.length) {
         return Response.json({ error: "batch_not_found" }, { status: 404 });
       }
-      const rows = result.rows.map(
-        (row) => row as unknown as Record<string, unknown>
+      const rows = await formatDesignations(
+        result.rows.map((row) => row as unknown as Record<string, unknown>)
       );
       return csvResponse(
         toCsv(rows),
@@ -112,7 +160,9 @@ export async function GET(req: NextRequest) {
       `,
       args: [...EXPORTABLE_ORDER_STATUSES],
     });
-    const rows = result.rows.map((row) => row as unknown as Record<string, unknown>);
+    const rows = result.rows.map(
+      (row) => row as unknown as Record<string, unknown>
+    );
 
     let batchId: number | undefined;
     if (!all && rows.length) {
@@ -131,11 +181,13 @@ export async function GET(req: NextRequest) {
       });
     }
     await tx.commit();
+    tx = null;
+    const formattedRows = await formatDesignations(rows);
 
     const filename = batchId
       ? `commandes-${date}-lot-${batchId}.csv`
       : `commandes-${date}.csv`;
-    return csvResponse(toCsv(rows), filename, batchId);
+    return csvResponse(toCsv(formattedRows), filename, batchId);
   } catch (error) {
     if (tx) await tx.rollback();
     if (isDuplicateReviewSchemaMissing(error)) {
