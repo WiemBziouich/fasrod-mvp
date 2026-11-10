@@ -510,6 +510,15 @@ test(
       assert.equal(
         (
           await db.execute({
+            sql: "SELECT designation FROM orders WHERE id = ?",
+            args: [first.body.id],
+          })
+        ).rows[0].designation,
+        "Synthetic Shirt - Black - M"
+      );
+      assert.equal(
+        (
+          await db.execute({
             sql: "SELECT duplicate_status FROM orders WHERE id = ?",
             args: [first.body.id],
           })
@@ -1188,6 +1197,21 @@ test(
           "confirmed_new",
         ],
       });
+      await db.execute({
+        sql: `INSERT INTO order_items (
+          order_id, product_id, product_name, color, size, qty, unit_price, line_total
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          Number(exportNew.lastInsertRowid),
+          "synthetic-shirt",
+          "Synthetic Shirt",
+          "Black",
+          "M",
+          2,
+          30,
+          60,
+        ],
+      });
       const pendingExport = await db.execute({
         sql: `INSERT INTO orders (
           name, address, city, governorate, phone, phone2, product_id,
@@ -1281,6 +1305,10 @@ test(
       assert.match(normalCsv, /Synthetic confirmed/);
       assert.match(normalCsv, /Synthetic  address/);
       assert.match(normalCsv, /Synthetic item/);
+      assert.match(
+        normalCsv,
+        /Synthetic Shirt - Black - M \+ Synthetic Shirt - Black - M/
+      );
       assert.doesNotMatch(
         normalCsv,
         /Synthetic pending|Synthetic duplicate|Synthetic manually duplicate/

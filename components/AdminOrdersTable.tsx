@@ -9,6 +9,7 @@ import {
   type OrderStatus,
 } from "@/lib/duplicate-orders.mjs";
 import { formatTunisiaDateTime } from "@/lib/tunisia-time.mjs";
+import { formatOrderDesignation } from "@/lib/order-designation.mjs";
 
 type OrderItem = {
   product_id: string;
@@ -80,11 +81,7 @@ const phoneMatches = (left: Order, right: Order) => {
 
 function orderItems(order: Pick<Order, "items" | "designation">) {
   return order.items.length
-    ? order.items.map((item) => (
-        <li key={`${item.product_id}-${item.color}-${item.size}`}>
-          {item.product_name} — {item.color} — {item.size} × {item.qty}
-        </li>
-      ))
+    ? <li>{formatOrderDesignation(order.items)}</li>
     : <li>{order.designation || "Aucun article détaillé"}</li>;
 }
 
@@ -470,7 +467,7 @@ export default function AdminOrdersTable({
                     <td style={cell}>{order.address}</td>
                     <td style={cell}>
                       <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.6 }}>
-                        {order.designation || "—"}
+                        {formatOrderDesignation(order.items) || order.designation || "—"}
                       </div>
                     </td>
                     <td style={{ ...cell, fontSize: 11 }}>{order.item_price} DT</td>
