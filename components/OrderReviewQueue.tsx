@@ -72,8 +72,10 @@ function basketDifferences(order: PendingOrder) {
 const actions = [
   { status: "confirmed_new", label: "Confirmer nouvelle commande" },
   { status: "pending_review", label: "Garder en attente" },
+  { status: "rejected", label: "Refuser la commande" },
   { status: "confirmed_duplicate", label: "Confirmer doublon" },
 ] as const;
+type ReviewAction = (typeof actions)[number]["status"];
 
 const reviewReasonLabels: Record<string, string> = {
   same_basket: "Panier identique",
@@ -99,8 +101,16 @@ export default function OrderReviewQueue({
   const [busyOrder, setBusyOrder] = useState<number | null>(null);
   const [error, setError] = useState("");
 
-  async function decide(order: PendingOrder, status: (typeof actions)[number]["status"]) {
+  async function decide(order: PendingOrder, status: ReviewAction) {
     if (busyOrder !== null) return;
+    if (
+      status === "rejected" &&
+      !window.confirm(
+        `Refuser la commande #${order.id} ? Elle ne sera pas exportée vers Navex.`
+      )
+    ) {
+      return;
+    }
     setBusyOrder(order.id);
     setError("");
 
@@ -123,6 +133,8 @@ export default function OrderReviewQueue({
             "La commande de référence a déjà été traitée comme doublon, ou elle a changé. Traite d’abord la plus récente, puis recharge la page.",
           review_already_resolved:
             "Cette commande a déjà été traitée. Recharge la page.",
+          duplicate_review_migration_required:
+            "La migration des décisions de revue doit être appliquée avant de traiter cette commande.",
           order_not_found:
             "Cette commande n’existe plus. Recharge la page.",
         };
@@ -299,7 +311,9 @@ export default function OrderReviewQueue({
                       background:
                         action.status === "confirmed_duplicate"
                           ? "#b91c1c"
-                          : action.status === "confirmed_new"
+                          : action.status === "rejected"
+                            ? "#991b1b"
+                            : action.status === "confirmed_new"
                             ? "#166534"
                             : "#fff",
                       color:

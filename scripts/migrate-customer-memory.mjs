@@ -34,6 +34,28 @@ try {
       "ALTER TABLE orders ADD COLUMN review_reason TEXT NOT NULL DEFAULT ''"
     );
   }
+  if (!orderColumns.has("review_decision")) {
+    await db.execute(
+      "ALTER TABLE orders ADD COLUMN review_decision TEXT NOT NULL DEFAULT ''"
+    );
+  }
+  const reviewHistoryTables = await db.execute(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'order_review_history'"
+  );
+  if (reviewHistoryTables.rows.length) {
+    const reviewHistoryColumns = await db.execute(
+      "PRAGMA table_info(order_review_history)"
+    );
+    if (
+      !reviewHistoryColumns.rows.some(
+        (row) => String(row.name) === "review_action"
+      )
+    ) {
+      await db.execute(
+        "ALTER TABLE order_review_history ADD COLUMN review_action TEXT NOT NULL DEFAULT ''"
+      );
+    }
+  }
   await db.execute(`CREATE TABLE IF NOT EXISTS flagged_phones (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL UNIQUE, reason TEXT NOT NULL CHECK (reason IN ('retour','refus','injoignable','autre')), note TEXT NOT NULL DEFAULT '' CHECK (length(note) <= 200), created_at TEXT NOT NULL DEFAULT (datetime('now')), active INTEGER NOT NULL DEFAULT 1)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS navex_parcels (code TEXT PRIMARY KEY, phone TEXT NOT NULL, phone2 TEXT NOT NULL DEFAULT '', state TEXT NOT NULL CHECK (state IN ('pending','depot','in_transit','delivered','returned','to_verify','exchange','unserious','other')), state_raw TEXT NOT NULL DEFAULT '', motif TEXT NOT NULL DEFAULT '', price INTEGER, parcel_date TEXT, order_id INTEGER, first_seen_at TEXT NOT NULL DEFAULT (datetime('now')), state_changed_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);
   const parcelColumns = await db.execute("PRAGMA table_info(navex_parcels)");
@@ -86,6 +108,9 @@ try {
   const migrated = await db.execute("PRAGMA table_info(orders)");
   if (!migrated.rows.some((row) => String(row.name) === "review_reason")) {
     throw new Error("Customer-memory migration verification failed.");
+  }
+  if (!migrated.rows.some((row) => String(row.name) === "review_decision")) {
+    throw new Error("Review-decision migration verification failed.");
   }
   console.log("Local customer-memory schema is ready.");
 } finally {

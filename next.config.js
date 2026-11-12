@@ -20,6 +20,9 @@ const adminHeaders = [
 ];
 
 const nextConfig = {
+  ...(process.platform === "win32" && process.argv.includes("build")
+    ? { experimental: { cpus: 1 } }
+    : {}),
   images: {
     remotePatterns: [
       {

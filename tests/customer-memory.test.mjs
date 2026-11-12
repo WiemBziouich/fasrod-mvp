@@ -22,7 +22,10 @@ import { PAGE_STATES } from "../lib/navex/page-states.mjs";
 import { mapEtat } from "../lib/navex/state-map-core.mjs";
 import { FakeNavexClient } from "../lib/navex/fake-client.mjs";
 import { refreshParcelStatesWithDb } from "../lib/navex-sync-core.mjs";
-import { createReviewReasonColumnCache } from "../lib/review-reason-column.mjs";
+import {
+  createOrderColumnCache,
+  createReviewReasonColumnCache,
+} from "../lib/review-reason-column.mjs";
 import { runStateDiscovery } from "../scripts/navex-discover-states.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -214,6 +217,24 @@ test("review-reason column cache retries failures and expires after sixty second
   timestamp += 1;
   assert.equal(await hasColumn(), false);
   assert.equal(calls, 3);
+});
+
+test("order column cache shares one schema read across column checks", async () => {
+  let calls = 0;
+  const hasColumn = createOrderColumnCache(async () => {
+    calls += 1;
+    return ["review_reason", "review_decision"];
+  });
+
+  assert.deepEqual(
+    await Promise.all([
+      hasColumn("review_reason"),
+      hasColumn("review_decision"),
+      hasColumn("missing"),
+    ]),
+    [true, true, false]
+  );
+  assert.equal(calls, 1);
 });
 
 test("collage parser extracts parcel dates and phones while masking the preview", () => {
@@ -565,6 +586,10 @@ test("customer-memory migration is repeatable and parcel schema stores no name o
   await db.execute(`CREATE TABLE orders (
     id INTEGER PRIMARY KEY, created_at TEXT, phone TEXT, phone2 TEXT
   )`);
+  await db.execute(`CREATE TABLE order_review_history (
+    id INTEGER PRIMARY KEY, order_id INTEGER, previous_status TEXT NOT NULL,
+    new_status TEXT NOT NULL, reviewed_by TEXT NOT NULL DEFAULT 'admin'
+  )`);
   await db.execute(`CREATE TABLE navex_parcels (
     code TEXT PRIMARY KEY, phone TEXT NOT NULL, phone2 TEXT NOT NULL DEFAULT '',
     state TEXT NOT NULL, state_raw TEXT NOT NULL DEFAULT '', motif TEXT NOT NULL DEFAULT '',
@@ -631,6 +656,13 @@ test("customer-memory migration is repeatable and parcel schema stores no name o
   );
   const reviewColumn = await db.execute("PRAGMA table_info(orders)");
   assert.ok(reviewColumn.rows.some((row) => String(row.name) === "review_reason"));
+  assert.ok(reviewColumn.rows.some((row) => String(row.name) === "review_decision"));
+  const reviewHistoryColumns = await db.execute(
+    "PRAGMA table_info(order_review_history)"
+  );
+  assert.ok(
+    reviewHistoryColumns.rows.some((row) => String(row.name) === "review_action")
+  );
 
   const rejected = spawnSync(process.execPath, [migration], {
     cwd: temp,

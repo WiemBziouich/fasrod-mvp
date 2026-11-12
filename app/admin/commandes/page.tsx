@@ -45,6 +45,7 @@ type Order = {
   export_batch_id: number | null;
   duplicate_status: OrderStatus;
   duplicate_of: number | null;
+  review_decision: string;
   items: ComparedItem[];
 };
 
@@ -71,17 +72,27 @@ function isMissingExportBatchSchema(error: unknown) {
 
 export default async function AdminOrdersPage() {
   let hasReviewReason = false;
+  let hasReviewDecision = false;
   try {
     const orderColumns = await db.execute("PRAGMA table_info(orders)");
-    hasReviewReason = orderColumns.rows.some(
-      (column) => String(column.name) === "review_reason"
+    const columnNames = new Set(
+      orderColumns.rows.map((column) => String(column.name))
     );
+    hasReviewReason = columnNames.has("review_reason");
+    hasReviewDecision = columnNames.has("review_decision");
   } catch {
     hasReviewReason = false;
+    hasReviewDecision = false;
   }
   const reviewReasonColumn = hasReviewReason
     ? "review_reason"
     : "'' AS review_reason";
+  const reviewDecisionColumn = hasReviewDecision
+    ? "review_decision"
+    : "'' AS review_decision";
+  const unresolvedReviewFilter = hasReviewDecision
+    ? "AND COALESCE(review_decision, '') <> 'rejected'"
+    : "";
   const [
     result,
     reviewResult,
@@ -91,9 +102,11 @@ export default async function AdminOrdersPage() {
   ] = await Promise.all([
     db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 200"),
     db.execute(`
-      SELECT id, created_at, name, phone, phone2, duplicate_of, ${reviewReasonColumn}
+      SELECT id, created_at, name, phone, phone2, duplicate_of,
+        ${reviewReasonColumn}, ${reviewDecisionColumn}
       FROM orders
       WHERE duplicate_status = 'pending_review'
+        ${unresolvedReviewFilter}
       ORDER BY created_at DESC, id DESC
     `),
     db.execute({
@@ -158,6 +171,7 @@ export default async function AdminOrdersPage() {
         value.export_batch_id == null ? null : Number(value.export_batch_id),
       duplicate_status: String(value.duplicate_status) as OrderStatus,
       duplicate_of: value.duplicate_of == null ? null : Number(value.duplicate_of),
+      review_decision: String(value.review_decision ?? ""),
       items: [],
     };
   };

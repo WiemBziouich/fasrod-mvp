@@ -15,6 +15,13 @@ const REVIEW_STATUSES = new Set<OrderStatus>([
   "confirmed_duplicate",
 ]);
 
+type ReviewAction = OrderStatus | "rejected";
+
+function isReviewAction(value: unknown): value is ReviewAction {
+  return value === "rejected" ||
+    (isOrderStatus(value) && REVIEW_STATUSES.has(value));
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const orderId = Number(body?.orderId);
@@ -24,8 +31,7 @@ export async function POST(req: NextRequest) {
   if (
     !Number.isSafeInteger(orderId) ||
     orderId < 1 ||
-    !isOrderStatus(status) ||
-    !REVIEW_STATUSES.has(status)
+    !isReviewAction(status)
   ) {
     return NextResponse.json({ error: "invalid_review" }, { status: 400 });
   }
@@ -49,7 +55,7 @@ export async function POST(req: NextRequest) {
     tx = await db.transaction("write");
     const currentResult = await tx.execute({
       sql: `
-        SELECT duplicate_status, duplicate_of
+        SELECT duplicate_status, duplicate_of, review_decision
         FROM orders
         WHERE id = ?
       `,
@@ -62,7 +68,10 @@ export async function POST(req: NextRequest) {
     }
 
     const previousStatus = String(current.duplicate_status);
-    if (previousStatus !== "pending_review") {
+    if (
+      previousStatus !== "pending_review" ||
+      String(current.review_decision ?? "") !== ""
+    ) {
       await tx.rollback();
       return NextResponse.json({ error: "review_already_resolved" }, {
         status: 409,
@@ -71,7 +80,8 @@ export async function POST(req: NextRequest) {
 
     if (status === "confirmed_duplicate") {
       const candidateResult = await tx.execute({
-        sql: "SELECT id, duplicate_status FROM orders WHERE id = ?",
+        sql: `SELECT id, duplicate_status, review_decision
+              FROM orders WHERE id = ?`,
         args: [duplicateOf],
       });
       if (
@@ -79,7 +89,8 @@ export async function POST(req: NextRequest) {
         duplicateOf !==
           (current.duplicate_of == null ? null : Number(current.duplicate_of)) ||
         String(candidateResult.rows[0].duplicate_status) ===
-          "confirmed_duplicate"
+          "confirmed_duplicate" ||
+        String(candidateResult.rows[0]?.review_decision ?? "") === "rejected"
       ) {
         await tx.rollback();
         return NextResponse.json(
@@ -93,15 +104,21 @@ export async function POST(req: NextRequest) {
     }
 
     const nextDuplicateOf =
-      status === "confirmed_new" ? null : duplicateOf;
+      status === "confirmed_new" || status === "rejected"
+        ? null
+        : duplicateOf;
+    const nextStatus: OrderStatus =
+      status === "rejected" ? "pending_review" : status;
+    const reviewDecision = status === "rejected" ? "rejected" : "";
 
     await tx.execute({
       sql: `
         UPDATE orders
-        SET duplicate_status = ?, duplicate_of = ?
+        SET duplicate_status = ?, duplicate_of = ?, review_decision = ?
         WHERE id = ? AND duplicate_status = 'pending_review'
+          AND COALESCE(review_decision, '') = ''
       `,
-      args: [status, nextDuplicateOf, orderId],
+      args: [nextStatus, nextDuplicateOf, reviewDecision, orderId],
     });
     const updated = await tx.execute("SELECT changes() AS count");
     if (Number(updated.rows[0]?.count ?? 0) !== 1) {
@@ -114,16 +131,17 @@ export async function POST(req: NextRequest) {
       sql: `
         INSERT INTO order_review_history (
           order_id, previous_status, new_status,
-          previous_duplicate_of, duplicate_of, reviewed_by
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          previous_duplicate_of, duplicate_of, reviewed_by, review_action
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
         orderId,
         previousStatus,
-        status,
+        nextStatus,
         current.duplicate_of == null ? null : Number(current.duplicate_of),
         nextDuplicateOf,
         "admin",
+        status,
       ],
     });
 
@@ -140,7 +158,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: "duplicate_review_migration_required",
-          message: "La base nécessite la migration de revue des doublons.",
+          message: "La base nécessite la migration des décisions de revue.",
         },
         { status: 503 }
       );

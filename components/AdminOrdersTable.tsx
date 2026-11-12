@@ -35,6 +35,7 @@ type Order = {
   export_batch_id: number | null;
   duplicate_status: OrderStatus;
   duplicate_of: number | null;
+  review_decision: string;
   items: OrderItem[];
 };
 
@@ -59,11 +60,12 @@ type Action = { orderId: number; kind: "supersede" | "restore" | "edit" } | null
 
 const PAGE_SIZE = 10;
 
-const reviewLabel: Record<OrderStatus, string> = {
+const reviewLabel: Record<OrderStatus | "rejected", string> = {
   normal: "Normale",
   pending_review: "À vérifier",
   confirmed_new: "Nouvelle confirmée",
   confirmed_duplicate: "Doublon confirmé",
+  rejected: "Refusée",
 };
 
 const isExported = (order: Order) =>
@@ -432,11 +434,13 @@ export default function AdminOrdersTable({
           <tbody>
             {visibleOrders.map((order) => {
               const isActive = action?.orderId === order.id;
+              const isRejected = order.review_decision === "rejected";
               const actionEligible =
                 order.duplicate_status === "normal" ||
                 order.duplicate_status === "confirmed_new";
               const canEdit =
-                actionEligible || order.duplicate_status === "pending_review";
+                !isRejected &&
+                (actionEligible || order.duplicate_status === "pending_review");
               const exported = isExported(order);
               const suggestions = orders.filter(
                 (candidate) =>
@@ -484,20 +488,26 @@ export default function AdminOrdersTable({
                           fontWeight: 600,
                           lineHeight: 1.4,
                           background:
-                            order.duplicate_status === "pending_review"
-                              ? "#fef3c7"
-                              : order.duplicate_status === "confirmed_duplicate"
-                                ? "#fee2e2"
-                                : "#f5f5f4",
+                            isRejected
+                              ? "#fee2e2"
+                              : order.duplicate_status === "pending_review"
+                                ? "#fef3c7"
+                                : order.duplicate_status === "confirmed_duplicate"
+                                  ? "#fee2e2"
+                                  : "#f5f5f4",
                           color:
-                            order.duplicate_status === "pending_review"
-                              ? "#92400e"
-                              : order.duplicate_status === "confirmed_duplicate"
-                                ? "#991b1b"
-                                : "#44403c",
+                            isRejected
+                              ? "#991b1b"
+                              : order.duplicate_status === "pending_review"
+                                ? "#92400e"
+                                : order.duplicate_status === "confirmed_duplicate"
+                                  ? "#991b1b"
+                                  : "#44403c",
                         }}
                       >
-                        {reviewLabel[order.duplicate_status]}
+                        {isRejected
+                          ? reviewLabel.rejected
+                          : reviewLabel[order.duplicate_status]}
                       </span>
                       {order.duplicate_of !== null && (
                         <div style={{ marginTop: 5, fontSize: 10, color: "#78716c" }}>
@@ -513,11 +523,23 @@ export default function AdminOrdersTable({
                           borderRadius: 20,
                           fontSize: 10,
                           fontWeight: 600,
-                          background: exported ? "#dcfce7" : "#fef3c7",
-                          color: exported ? "#166534" : "#92400e",
+                          background: isRejected
+                            ? "#fee2e2"
+                            : exported
+                              ? "#dcfce7"
+                              : "#fef3c7",
+                          color: isRejected
+                            ? "#991b1b"
+                            : exported
+                              ? "#166534"
+                              : "#92400e",
                         }}
                       >
-                        {exported ? "Exportée ✓" : "En attente"}
+                        {isRejected
+                          ? "Refusée · non exportée"
+                          : exported
+                            ? "Exportée ✓"
+                            : "En attente"}
                       </span>
                     </td>
                     <td style={cell}>

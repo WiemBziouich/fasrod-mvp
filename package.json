@@ -6,7 +6,7 @@
     "dev": "next dev -H 127.0.0.1 -p 3010",
     "build": "next build",
     "start": "next start -p 3010",
-    "test": "node --test --test-concurrency=1 tests/duplicate-orders.test.mjs tests/duplicate-orders.integration.test.mjs tests/product-order.integration.test.mjs tests/tunisia-time.test.mjs tests/order-designation.test.mjs"
+    "test": "node --test --test-concurrency=1 tests/duplicate-orders.test.mjs tests/duplicate-orders.integration.test.mjs tests/product-order.integration.test.mjs tests/tunisia-time.test.mjs tests/order-designation.test.mjs tests/customer-memory.test.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

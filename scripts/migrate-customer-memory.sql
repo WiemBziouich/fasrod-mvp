@@ -6,3 +6,5 @@ CREATE INDEX IF NOT EXISTS idx_navex_parcels_state ON navex_parcels(state);
 CREATE TABLE IF NOT EXISTS navex_sync_state (id INTEGER PRIMARY KEY CHECK (id = 1), last_sync_at TEXT, last_status TEXT, last_count INTEGER, last_error TEXT CHECK (last_error IS NULL OR length(last_error) <= 255));
 CREATE INDEX IF NOT EXISTS idx_flagged_phones_active_phone ON flagged_phones(active, phone);
 ALTER TABLE orders ADD COLUMN review_reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN review_decision TEXT NOT NULL DEFAULT '';
+ALTER TABLE order_review_history ADD COLUMN review_action TEXT NOT NULL DEFAULT '';

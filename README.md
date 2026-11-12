@@ -23,7 +23,8 @@ Production : `npm run build && npm start` sur un VPS (le dossier `data/` doit ê
   à cette dernière raison). Une décision admin est conservée dans `order_review_history`.
   L'admin peut aussi rattacher
   une commande non exportée comme doublon d'une autre, la restaurer ou modifier ses coordonnées
-  et articles. Les commandes en revue et les doublons confirmés sont exclues des deux exports
+  et articles. Une commande en revue peut être refusée; elle reste dans l'historique et n'est
+  jamais exportée. La décision est journalisée dans l'historique. Les commandes en revue et les doublons confirmés sont exclues des deux exports
   Navex; les colonnes et le format Navex restent inchangés. Chaque export normal crée
   un lot récupérable et les commandes ne deviennent éligibles au nettoyage qu'après confirmation
   de leur import Navex, puis 30 jours supplémentaires.
@@ -181,10 +182,12 @@ Les 24 gouvernorats utilisent l'orthographe exacte de Navex.
 
 ## Mémoire clients et Navex
 Avant de déployer le code de mémoire client, exécuter toutes les instructions de
-`scripts/migrate-customer-memory.sql` séparément dans la console SQL de Turso. Elles ajoutent
+`scripts/migrate-customer-memory.sql` séparément dans la console SQL de Turso, après la migration
+de revue des doublons qui crée `order_review_history`. Elles ajoutent
 les tables de numéros à risque, colis Navex et état de synchronisation, leurs index, ainsi que
-`orders.review_reason`. Effectuer cette migration avant le déploiement; l'instruction
-`ALTER TABLE` s'exécute une seule fois.
+`orders.review_reason`, `orders.review_decision` et `order_review_history.review_action`.
+Effectuer cette migration avant le déploiement; les instructions `ALTER TABLE` s'exécutent
+chacune une seule fois.
 
 Pour une base SQLite locale existante, arrêter l'application puis lancer
 `node .\scripts\migrate-customer-memory.mjs` depuis la racine. Le script ne charge aucun

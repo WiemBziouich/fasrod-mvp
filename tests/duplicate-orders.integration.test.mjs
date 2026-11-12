@@ -1052,6 +1052,7 @@ test(
       assert.match(adminHtml, /Synthetic historical 0/);
       assert.match(adminHtml, /Téléphone correspondant :/);
       assert.match(adminHtml, /Panier identique :/);
+      assert.match(adminHtml, /Refuser la commande/);
       assert.match(adminHtml, /Différences entre les paniers/);
       t.diagnostic("Authenticated review queue and access controls passed.");
 
@@ -1116,6 +1117,93 @@ test(
         2
       );
 
+      const riskOnlyOrder = await db.execute({
+        sql: `INSERT INTO orders (
+          created_at, name, address, city, governorate, phone, phone2,
+          product_id, designation, qty, item_price, delivery_fee, total,
+          duplicate_status, duplicate_of, review_reason
+        ) VALUES (
+          datetime('now'), 'Synthetic rejected order', 'Synthetic address',
+          'ARIANA VILLE', 'Ariana', '25000007', '25000007',
+          'synthetic-shirt', 'Synthetic Shirt', 1, 30, 8, 38,
+          'pending_review', NULL, 'previous_return'
+        )`,
+      });
+      const rejectedOrderId = Number(riskOnlyOrder.lastInsertRowid);
+      const rejectResponse = await fetchTest(
+        `${baseUrl}/api/admin/orders/review`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify({
+            orderId: rejectedOrderId,
+            status: "rejected",
+          }),
+        }
+      );
+      assert.equal(rejectResponse.status, 200);
+      assert.deepEqual(await rejectResponse.json(), {
+        ok: true,
+        orderId: rejectedOrderId,
+        status: "rejected",
+        duplicateOf: null,
+      });
+      const rejectedState = await db.execute({
+        sql: `SELECT duplicate_status, duplicate_of, review_decision
+              FROM orders WHERE id = ?`,
+        args: [rejectedOrderId],
+      });
+      assert.deepEqual(Object.values(rejectedState.rows[0]), [
+        "pending_review",
+        null,
+        "rejected",
+      ]);
+      const rejectionHistory = await db.execute({
+        sql: `SELECT previous_status, new_status, review_action, duplicate_of
+              FROM order_review_history WHERE order_id = ?`,
+        args: [rejectedOrderId],
+      });
+      assert.deepEqual(Object.values(rejectionHistory.rows[0]), [
+        "pending_review",
+        "pending_review",
+        "rejected",
+        null,
+      ]);
+      const tryResolveAgain = await fetchTest(
+        `${baseUrl}/api/admin/orders/review`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify({
+            orderId: rejectedOrderId,
+            status: "confirmed_new",
+          }),
+        }
+      );
+      assert.equal(tryResolveAgain.status, 409);
+
+      const orderAfterRejection = await postOrder("25000007", [shirt]);
+      assert.equal(orderAfterRejection.response.status, 200);
+      const orderAfterRejectionState = await db.execute({
+        sql: `SELECT duplicate_status, duplicate_of
+              FROM orders WHERE id = ?`,
+        args: [orderAfterRejection.body.id],
+      });
+      assert.equal(orderAfterRejectionState.rows[0].duplicate_status, "normal");
+      assert.equal(orderAfterRejectionState.rows[0].duplicate_of, null);
+      const rejectedOrdersPage = await fetchTest(
+        `${baseUrl}/admin/commandes`,
+        { headers: { Authorization: adminAuthorization } }
+      );
+      assert.equal(rejectedOrdersPage.status, 200);
+      assert.match(await rejectedOrdersPage.text(), /Refusée · non exportée/);
+
       const confirmDuplicate = await fetchTest(`${baseUrl}/api/admin/orders/review`, {
         method: "POST",
         headers: {
@@ -1144,6 +1232,7 @@ test(
       });
       assert.equal(Number(duplicateHistory.rows[0].duplicate_of), secondaryBase.body.id);
       assert.equal(duplicateHistory.rows[0].reviewed_by, "admin");
+
       t.diagnostic("Review decisions and history persistence passed.");
 
       const editBody = {

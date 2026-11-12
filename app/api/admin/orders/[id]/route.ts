@@ -66,6 +66,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     if (
       current.exported_at != null ||
       current.export_batch_id != null ||
+      String(current.review_decision ?? "") === "rejected" ||
       !["normal", "confirmed_new", "pending_review"].includes(status)
     ) {
       await tx.rollback();

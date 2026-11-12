@@ -13,16 +13,14 @@ import { formatOrderDesignation } from "@/lib/order-designation.mjs";
 import { getCustomerHistory } from "@/lib/customer-history";
 import { EXPORTED_ORDER_REVIEW_DAYS } from "@/lib/risk-config";
 import { decideCustomerReview } from "@/lib/customer-risk.mjs";
-import { createReviewReasonColumnCache } from "@/lib/review-reason-column.mjs";
+import { createOrderColumnCache } from "@/lib/review-reason-column.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const hasReviewReasonColumn = createReviewReasonColumnCache(async () => {
+const hasOrderColumn = createOrderColumnCache(async () => {
   const columns = await db.execute("PRAGMA table_info(orders)");
-  return columns.rows.some(
-    (column) => String(column.name) === "review_reason"
-  );
+  return columns.rows.map((column) => String(column.name));
 });
 
 export async function POST(req: NextRequest) {
@@ -96,7 +94,10 @@ export async function POST(req: NextRequest) {
     // History is best-effort: a history read must never block order creation.
   }
 
-  const supportsReviewReason = await hasReviewReasonColumn();
+  const [supportsReviewReason, supportsReviewDecision] = await Promise.all([
+    hasOrderColumn("review_reason"),
+    hasOrderColumn("review_decision"),
+  ]);
 
   try {
     const tx = await db.transaction("write");
@@ -111,6 +112,7 @@ export async function POST(req: NextRequest) {
         FROM orders
         WHERE datetime(created_at) >= datetime('now', '-30 days')
           AND duplicate_status IN ('normal', 'pending_review', 'confirmed_new')
+          ${supportsReviewDecision ? "AND COALESCE(review_decision, '') <> 'rejected'" : ""}
         ORDER BY datetime(created_at) DESC, id DESC
       `);
 
