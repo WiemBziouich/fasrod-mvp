@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS flagged_phones (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL UNIQUE, reason TEXT NOT NULL CHECK (reason IN ('retour','refus','injoignable','autre')), note TEXT NOT NULL DEFAULT '' CHECK (length(note) <= 200), created_at TEXT NOT NULL DEFAULT (datetime('now')), active INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS navex_parcels (code TEXT PRIMARY KEY, phone TEXT NOT NULL, phone2 TEXT NOT NULL DEFAULT '', state TEXT NOT NULL CHECK (state IN ('pending','depot','in_transit','delivered','returned','to_verify','exchange','unserious','other')), state_raw TEXT NOT NULL DEFAULT '', motif TEXT NOT NULL DEFAULT '', price INTEGER, parcel_date TEXT, order_id INTEGER, first_seen_at TEXT NOT NULL DEFAULT (datetime('now')), state_changed_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+CREATE INDEX IF NOT EXISTS idx_navex_parcels_phone ON navex_parcels(phone);
+CREATE INDEX IF NOT EXISTS idx_navex_parcels_phone2 ON navex_parcels(phone2);
+CREATE INDEX IF NOT EXISTS idx_navex_parcels_state ON navex_parcels(state);
+CREATE TABLE IF NOT EXISTS navex_sync_state (id INTEGER PRIMARY KEY CHECK (id = 1), last_sync_at TEXT, last_status TEXT, last_count INTEGER, last_error TEXT CHECK (last_error IS NULL OR length(last_error) <= 255));
+CREATE INDEX IF NOT EXISTS idx_flagged_phones_active_phone ON flagged_phones(active, phone);
+ALTER TABLE orders ADD COLUMN review_reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN review_decision TEXT NOT NULL DEFAULT '';
+ALTER TABLE order_review_history ADD COLUMN review_action TEXT NOT NULL DEFAULT '';

@@ -9,6 +9,7 @@ export default function AdminNav() {
   const links = [
     { href: "/admin/produits", label: "Produits" },
     { href: "/admin/commandes", label: "Commandes" },
+    { href: "/admin/clients", label: "Clients" },
   ];
 
   return (
@@ -28,7 +29,8 @@ export default function AdminNav() {
 
       <div style={{ display: "flex", gap: 8 }}>
         {links.map((link) => {
-          const active = pathname === link.href;
+          const active =
+            pathname === link.href || pathname.startsWith(`${link.href}/`);
 
           return (
             <Link

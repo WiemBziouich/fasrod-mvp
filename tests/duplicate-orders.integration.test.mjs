@@ -29,6 +29,11 @@ const orderEditMigration = resolve(
   "scripts",
   "migrate-order-edit-log.mjs"
 );
+const customerMemoryMigration = resolve(
+  projectRoot,
+  "scripts",
+  "migrate-customer-memory.mjs"
+);
 const nextCli = resolve(projectRoot, "node_modules", "next", "dist", "bin", "next");
 const adminAuthorization = `Basic ${Buffer.from(
   "admin:synthetic-review-test"
@@ -373,6 +378,16 @@ test(
         0,
         "export-batch migration refuses all remote URLs"
       );
+      const customerMigration = spawnSync(
+        process.execPath,
+        [customerMemoryMigration],
+        { cwd: tempRoot, env: migrationEnv, encoding: "utf8" }
+      );
+      assert.equal(
+        customerMigration.status,
+        0,
+        "customer-memory schema migrates in temporary SQLite"
+      );
       t.diagnostic("Temporary schema migrations executed twice; remote URL rejected.");
 
       const afterMigration = {
@@ -475,6 +490,160 @@ test(
       });
       await waitForServer(`${baseUrl}/api/products`, serverProcess, () => serverOutput);
       t.diagnostic("Isolated Next.js server is ready.");
+      const cronWithoutSecret = await fetchTest(`${baseUrl}/api/cron/navex-sync`);
+      assert.equal(cronWithoutSecret.status, 401);
+
+      const flaggedPhoneResponse = await fetchTest(
+        `${baseUrl}/api/admin/flagged-phones`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: adminAuthorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            entries: [
+              {
+                phone: "00216 29 876 543",
+                reason: "retour",
+                note: "Note initiale",
+              },
+              { phone: "21 111 111", reason: "injoignable" },
+            ],
+          }),
+        }
+      );
+      assert.equal(flaggedPhoneResponse.status, 200);
+      const higherSeverityResponse = await fetchTest(
+        `${baseUrl}/api/admin/flagged-phones`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: adminAuthorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            phone: "29876543",
+            reason: "refus",
+            note: "",
+          }),
+        }
+      );
+      assert.equal(higherSeverityResponse.status, 200);
+      const lowerSeverityResponse = await fetchTest(
+        `${baseUrl}/api/admin/flagged-phones`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: adminAuthorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            phone: "29876543",
+            reason: "retour",
+            note: "",
+          }),
+        }
+      );
+      assert.equal(lowerSeverityResponse.status, 200);
+      const flaggedPhonesResponse = await fetchTest(
+        `${baseUrl}/api/admin/flagged-phones`,
+        { headers: { Authorization: adminAuthorization } }
+      );
+      const flaggedPhonesBody = await flaggedPhonesResponse.json();
+      assert.equal(flaggedPhonesResponse.status, 200);
+      assert.ok(
+        flaggedPhonesBody.phones.some((item) => item.phone === "29876543")
+      );
+      const preservedFlag = flaggedPhonesBody.phones.find(
+        (item) => item.phone === "29876543"
+      );
+      assert.equal(preservedFlag.reason, "refus");
+      assert.equal(preservedFlag.note, "Note initiale");
+      assert.ok(
+        flaggedPhonesBody.phones.some((item) => item.phone === "21111111")
+      );
+
+      const navexImport = (text, stateRaw = "En attente") =>
+        fetchTest(`${baseUrl}/api/admin/navex/import`, {
+          method: "POST",
+          headers: {
+            Authorization: adminAuthorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text, stateRaw }),
+        });
+      const tooManyParcels = await navexImport(
+        Array.from(
+          { length: 1001 },
+          (_, index) => `${String(300000000000 + index)} 21234567`
+        ).join("\n")
+      );
+      assert.equal(tooManyParcels.status, 400);
+      assert.equal((await tooManyParcels.json()).error, "too_many");
+
+      await db.execute({
+        sql: `INSERT INTO navex_parcels
+          (code, phone, state, state_raw, order_id)
+          VALUES ('999999999999', '21234567', 'pending', 'En attente', 42)`,
+      });
+      const importedParcels = [
+        "999999999999 21234567",
+        ...Array.from(
+          { length: 100 },
+          (_, index) => `${String(310000000000 + index)} 21234567`
+        ),
+      ];
+      const importedResponse = await navexImport(importedParcels.join("\n"));
+      assert.equal(importedResponse.status, 200);
+      const importedBody = await importedResponse.json();
+      assert.equal(importedBody.imported, 101);
+      assert.equal(importedBody.notFound, 0);
+      const preservedOrder = await db.execute(
+        "SELECT order_id FROM navex_parcels WHERE code = '999999999999'"
+      );
+      assert.equal(Number(preservedOrder.rows[0].order_id), 42);
+      const importedCount = await db.execute(
+        "SELECT COUNT(*) AS count FROM navex_parcels WHERE phone = '21234567'"
+      );
+      assert.equal(Number(importedCount.rows[0].count), 101);
+
+      const motifImport = await navexImport(
+        "321321321321 21234567 RTN Client disponible demain",
+        "RTN dépôt"
+      );
+      assert.equal(motifImport.status, 200);
+      const motifReimport = await navexImport(
+        "321321321321 21234567 RTN",
+        "RTN dépôt"
+      );
+      assert.equal(motifReimport.status, 200);
+      const importedMotif = await db.execute({
+        sql: "SELECT motif FROM navex_parcels WHERE code = ?",
+        args: ["321321321321"],
+      });
+      assert.equal(importedMotif.rows[0].motif, "Client disponible demain");
+
+      await db.execute(`
+        CREATE TRIGGER reject_second_navex_batch
+        BEFORE INSERT ON navex_parcels
+        WHEN NEW.code = '410000000100'
+        BEGIN
+          SELECT RAISE(FAIL, 'synthetic batch failure');
+        END
+      `);
+      const failedBatchResponse = await navexImport(
+        Array.from(
+          { length: 101 },
+          (_, index) => `${String(410000000000 + index)} 29876543`
+        ).join("\n")
+      );
+      assert.equal(failedBatchResponse.status, 500);
+      assert.deepEqual(await failedBatchResponse.json(), {
+        error: "navex_import_failed",
+        batchesWritten: 1,
+      });
+      await db.execute("DROP TRIGGER reject_second_navex_batch");
 
       const postOrder = async (phone, items, phone2 = phone, name = "Synthetic Buyer") => {
         const response = await fetchTest(`${baseUrl}/api/orders`, {
@@ -883,6 +1052,7 @@ test(
       assert.match(adminHtml, /Synthetic historical 0/);
       assert.match(adminHtml, /Téléphone correspondant :/);
       assert.match(adminHtml, /Panier identique :/);
+      assert.match(adminHtml, /Refuser la commande/);
       assert.match(adminHtml, /Différences entre les paniers/);
       t.diagnostic("Authenticated review queue and access controls passed.");
 
@@ -947,6 +1117,93 @@ test(
         2
       );
 
+      const riskOnlyOrder = await db.execute({
+        sql: `INSERT INTO orders (
+          created_at, name, address, city, governorate, phone, phone2,
+          product_id, designation, qty, item_price, delivery_fee, total,
+          duplicate_status, duplicate_of, review_reason
+        ) VALUES (
+          datetime('now'), 'Synthetic rejected order', 'Synthetic address',
+          'ARIANA VILLE', 'Ariana', '25000007', '25000007',
+          'synthetic-shirt', 'Synthetic Shirt', 1, 30, 8, 38,
+          'pending_review', NULL, 'previous_return'
+        )`,
+      });
+      const rejectedOrderId = Number(riskOnlyOrder.lastInsertRowid);
+      const rejectResponse = await fetchTest(
+        `${baseUrl}/api/admin/orders/review`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify({
+            orderId: rejectedOrderId,
+            status: "rejected",
+          }),
+        }
+      );
+      assert.equal(rejectResponse.status, 200);
+      assert.deepEqual(await rejectResponse.json(), {
+        ok: true,
+        orderId: rejectedOrderId,
+        status: "rejected",
+        duplicateOf: null,
+      });
+      const rejectedState = await db.execute({
+        sql: `SELECT duplicate_status, duplicate_of, review_decision
+              FROM orders WHERE id = ?`,
+        args: [rejectedOrderId],
+      });
+      assert.deepEqual(Object.values(rejectedState.rows[0]), [
+        "pending_review",
+        null,
+        "rejected",
+      ]);
+      const rejectionHistory = await db.execute({
+        sql: `SELECT previous_status, new_status, review_action, duplicate_of
+              FROM order_review_history WHERE order_id = ?`,
+        args: [rejectedOrderId],
+      });
+      assert.deepEqual(Object.values(rejectionHistory.rows[0]), [
+        "pending_review",
+        "pending_review",
+        "rejected",
+        null,
+      ]);
+      const tryResolveAgain = await fetchTest(
+        `${baseUrl}/api/admin/orders/review`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: adminAuthorization,
+          },
+          body: JSON.stringify({
+            orderId: rejectedOrderId,
+            status: "confirmed_new",
+          }),
+        }
+      );
+      assert.equal(tryResolveAgain.status, 409);
+
+      const orderAfterRejection = await postOrder("25000007", [shirt]);
+      assert.equal(orderAfterRejection.response.status, 200);
+      const orderAfterRejectionState = await db.execute({
+        sql: `SELECT duplicate_status, duplicate_of
+              FROM orders WHERE id = ?`,
+        args: [orderAfterRejection.body.id],
+      });
+      assert.equal(orderAfterRejectionState.rows[0].duplicate_status, "normal");
+      assert.equal(orderAfterRejectionState.rows[0].duplicate_of, null);
+      const rejectedOrdersPage = await fetchTest(
+        `${baseUrl}/admin/commandes`,
+        { headers: { Authorization: adminAuthorization } }
+      );
+      assert.equal(rejectedOrdersPage.status, 200);
+      assert.match(await rejectedOrdersPage.text(), /Refusée · non exportée/);
+
       const confirmDuplicate = await fetchTest(`${baseUrl}/api/admin/orders/review`, {
         method: "POST",
         headers: {
@@ -975,6 +1232,7 @@ test(
       });
       assert.equal(Number(duplicateHistory.rows[0].duplicate_of), secondaryBase.body.id);
       assert.equal(duplicateHistory.rows[0].reviewed_by, "admin");
+
       t.diagnostic("Review decisions and history persistence passed.");
 
       const editBody = {

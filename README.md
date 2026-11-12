@@ -16,11 +16,15 @@ Production : `npm run build && npm start` sur un VPS (le dossier `data/` doit ê
 - `/admin` (utilisateur `admin`, mot de passe = `ADMIN_PASSWORD`) : liste + bouton d'export CSV.
   L'export ne prend que les commandes **non exportées** puis les marque (pas de doublons).
   `prix` = articles × quantité + 8 DT, pré-rempli : l'employé le vérifie avant l'import Navex.
-- `/admin/commandes` : un panier identique associé au même téléphone dans les 30 jours, ou toute
-  commande du même téléphone dans l'heure précédente, place la nouvelle commande en revue.
-  Une décision admin est conservée dans `order_review_history`. L'admin peut aussi rattacher
+- `/admin/commandes` : un panier identique, une commande du même téléphone dans l'heure,
+  un téléphone signalé, un retour récent ou un colis ouvert/place d'export récent peuvent
+  déclencher la revue. Les raisons cumulées sont affichées dans cet ordre : panier identique,
+  téléphone récent, téléphone signalé, retour récent, colis ouvert (un export récent contribue
+  à cette dernière raison). Une décision admin est conservée dans `order_review_history`.
+  L'admin peut aussi rattacher
   une commande non exportée comme doublon d'une autre, la restaurer ou modifier ses coordonnées
-  et articles. Les commandes en revue et les doublons confirmés sont exclues des deux exports
+  et articles. Une commande en revue peut être refusée; elle reste dans l'historique et n'est
+  jamais exportée. La décision est journalisée dans l'historique. Les commandes en revue et les doublons confirmés sont exclues des deux exports
   Navex; les colonnes et le format Navex restent inchangés. Chaque export normal crée
   un lot récupérable et les commandes ne deviennent éligibles au nettoyage qu'après confirmation
   de leur import Navex, puis 30 jours supplémentaires.
@@ -175,6 +179,45 @@ sont migrés automatiquement au premier démarrage.
 de migration initiale, ainsi que les frais (`DELIVERY_FEE`) et la quantité max (`MAX_QTY`).
 Mettre les photos dans `public/products/` (remplacer les `.svg` provisoires).
 Les 24 gouvernorats utilisent l'orthographe exacte de Navex.
+
+## Mémoire clients et Navex
+Avant de déployer le code de mémoire client, exécuter toutes les instructions de
+`scripts/migrate-customer-memory.sql` séparément dans la console SQL de Turso, après la migration
+de revue des doublons qui crée `order_review_history`. Elles ajoutent
+les tables de numéros à risque, colis Navex et état de synchronisation, leurs index, ainsi que
+`orders.review_reason`, `orders.review_decision` et `order_review_history.review_action`.
+Effectuer cette migration avant le déploiement; les instructions `ALTER TABLE` s'exécutent
+chacune une seule fois.
+
+Pour une base SQLite locale existante, arrêter l'application puis lancer
+`node .\scripts\migrate-customer-memory.mjs` depuis la racine. Le script ne charge aucun
+fichier `.env`, refuse les URL distantes et peut être relancé sans dommage.
+
+L'administration `/admin/clients` permet de rechercher l'historique par téléphone, gérer les
+numéros à risque et importer un tableau Navex. Dans la zone d'import, coller le texte d'une page
+de suivi, sélectionner l'état de cette page, vérifier le nombre de colis trouvés/ignorés et les
+téléphones masqués, puis choisir « Importer et synchroniser ». Seuls les codes, téléphones et
+états nécessaires sont stockés; noms et adresses ne sont jamais conservés. Les états comme
+« À enlever » et « Enlevés » sont classés en attente; les libellés contenant « sérieux » sont
+classés « Client non sérieux » et comptent comme retours récents. Une synchronisation met à jour
+au plus 100 colis par exécution et s'interrompt après 40 secondes, par requêtes de suivi de
+20 codes maximum.
+
+Configurer `NAVEX_READ_TOKEN` (jeton complet du chemin API Navex) pour la lecture réelle et
+`CRON_SECRET` pour `/api/cron/navex-sync`; le cron reçoit ce secret dans `x-cron-secret` ou
+`Authorization: Bearer`. Ne jamais inscrire les valeurs des secrets dans le dépôt, les journaux
+ou la documentation. Sans `NAVEX_READ_TOKEN`, la synchronisation est ignorée et les états
+importés par collage restent disponibles.
+
+Pour découvrir les libellés de statut renvoyés par Navex, préparer un fichier texte local
+contenant un code colis par ligne (100 maximum), puis exécuter :
+
+```powershell
+node --env-file=.env.local .\scripts\navex-discover-states.mjs .\codes-navex.txt
+```
+
+Le rapport n'affiche que les états distincts et leurs nombres, jamais les codes ou les
+informations de livreur. N'utiliser que la cible `https://app.navex.tn`.
 
 ## Langues
 `components/I18n.tsx` : FR (avec touches tounsi) et AR (écriture arabe, RTL). Faire relire les textes par la cible.

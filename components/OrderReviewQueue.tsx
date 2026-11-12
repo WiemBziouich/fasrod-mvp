@@ -29,6 +29,8 @@ type PendingOrder = {
   phone: string;
   phone2: string;
   duplicate_of: number | null;
+  review_reason: string;
+  review_details: Record<string, string>;
   items: ComparedItem[];
   candidate: Candidate;
   phoneMatch: boolean;
@@ -70,8 +72,25 @@ function basketDifferences(order: PendingOrder) {
 const actions = [
   { status: "confirmed_new", label: "Confirmer nouvelle commande" },
   { status: "pending_review", label: "Garder en attente" },
+  { status: "rejected", label: "Refuser la commande" },
   { status: "confirmed_duplicate", label: "Confirmer doublon" },
 ] as const;
+type ReviewAction = (typeof actions)[number]["status"];
+
+const reviewReasonLabels: Record<string, string> = {
+  same_basket: "Panier identique",
+  recent_phone: "Commande récente avec ce numéro",
+  open_parcel: "Colis Navex encore ouvert",
+  previous_return: "Retour Navex récent",
+  flagged_phone: "Numéro signalé à risque",
+};
+
+function getReviewReasons(order: PendingOrder) {
+  return order.review_reason
+    .split(",")
+    .map((reason) => reason.trim())
+    .filter(Boolean);
+}
 
 export default function OrderReviewQueue({
   orders,
@@ -82,8 +101,16 @@ export default function OrderReviewQueue({
   const [busyOrder, setBusyOrder] = useState<number | null>(null);
   const [error, setError] = useState("");
 
-  async function decide(order: PendingOrder, status: (typeof actions)[number]["status"]) {
+  async function decide(order: PendingOrder, status: ReviewAction) {
     if (busyOrder !== null) return;
+    if (
+      status === "rejected" &&
+      !window.confirm(
+        `Refuser la commande #${order.id} ? Elle ne sera pas exportée vers Navex.`
+      )
+    ) {
+      return;
+    }
     setBusyOrder(order.id);
     setError("");
 
@@ -106,6 +133,8 @@ export default function OrderReviewQueue({
             "La commande de référence a déjà été traitée comme doublon, ou elle a changé. Traite d’abord la plus récente, puis recharge la page.",
           review_already_resolved:
             "Cette commande a déjà été traitée. Recharge la page.",
+          duplicate_review_migration_required:
+            "La migration des décisions de revue doit être appliquée avant de traiter cette commande.",
           order_not_found:
             "Cette commande n’existe plus. Recharge la page.",
         };
@@ -163,6 +192,32 @@ export default function OrderReviewQueue({
                 background: "#fff",
               }}
             >
+              <div
+                role="note"
+                style={{
+                  margin: "-14px -14px 12px",
+                  padding: "12px 14px",
+                  color: "#fff",
+                  background: "#b91c1c",
+                  borderRadius: "10px 10px 0 0",
+                  fontWeight: 700,
+                }}
+              >
+                {getReviewReasons(order).length === 0 ? (
+                  <div>
+                    À vérifier · Commande #{order.id} · {order.created_at} ·{" "}
+                    {order.phone}
+                  </div>
+                ) : (
+                  getReviewReasons(order).map((reason) => (
+                    <div key={reason}>
+                      {reviewReasonLabels[reason] ?? "Risque client"} ·{" "}
+                      {order.review_details[reason] ??
+                        `Téléphone ${order.phone} · ${order.created_at}`}
+                    </div>
+                  ))
+                )}
+              </div>
               <h3 style={{ margin: "0 0 8px" }}>
                 Commande #{order.id} — {order.name}
               </h3>
@@ -256,7 +311,9 @@ export default function OrderReviewQueue({
                       background:
                         action.status === "confirmed_duplicate"
                           ? "#b91c1c"
-                          : action.status === "confirmed_new"
+                          : action.status === "rejected"
+                            ? "#991b1b"
+                            : action.status === "confirmed_new"
                             ? "#166534"
                             : "#fff",
                       color:
