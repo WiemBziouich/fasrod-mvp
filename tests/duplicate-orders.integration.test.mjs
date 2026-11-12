@@ -29,6 +29,11 @@ const orderEditMigration = resolve(
   "scripts",
   "migrate-order-edit-log.mjs"
 );
+const customerMemoryMigration = resolve(
+  projectRoot,
+  "scripts",
+  "migrate-customer-memory.mjs"
+);
 const nextCli = resolve(projectRoot, "node_modules", "next", "dist", "bin", "next");
 const adminAuthorization = `Basic ${Buffer.from(
   "admin:synthetic-review-test"
@@ -373,6 +378,16 @@ test(
         0,
         "export-batch migration refuses all remote URLs"
       );
+      const customerMigration = spawnSync(
+        process.execPath,
+        [customerMemoryMigration],
+        { cwd: tempRoot, env: migrationEnv, encoding: "utf8" }
+      );
+      assert.equal(
+        customerMigration.status,
+        0,
+        "customer-memory schema migrates in temporary SQLite"
+      );
       t.diagnostic("Temporary schema migrations executed twice; remote URL rejected.");
 
       const afterMigration = {
@@ -475,6 +490,160 @@ test(
       });
       await waitForServer(`${baseUrl}/api/products`, serverProcess, () => serverOutput);
       t.diagnostic("Isolated Next.js server is ready.");
+      const cronWithoutSecret = await fetchTest(`${baseUrl}/api/cron/navex-sync`);
+      assert.equal(cronWithoutSecret.status, 401);
+
+      const flaggedPhoneResponse = await fetchTest(
+        `${baseUrl}/api/admin/flagged-phones`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: adminAuthorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            entries: [
+              {
+                phone: "00216 29 876 543",
+                reason: "retour",
+                note: "Note initiale",
+              },
+              { phone: "21 111 111", reason: "injoignable" },
+            ],
+          }),
+        }
+      );
+      assert.equal(flaggedPhoneResponse.status, 200);
+      const higherSeverityResponse = await fetchTest(
+        `${baseUrl}/api/admin/flagged-phones`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: adminAuthorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            phone: "29876543",
+            reason: "refus",
+            note: "",
+          }),
+        }
+      );
+      assert.equal(higherSeverityResponse.status, 200);
+      const lowerSeverityResponse = await fetchTest(
+        `${baseUrl}/api/admin/flagged-phones`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: adminAuthorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            phone: "29876543",
+            reason: "retour",
+            note: "",
+          }),
+        }
+      );
+      assert.equal(lowerSeverityResponse.status, 200);
+      const flaggedPhonesResponse = await fetchTest(
+        `${baseUrl}/api/admin/flagged-phones`,
+        { headers: { Authorization: adminAuthorization } }
+      );
+      const flaggedPhonesBody = await flaggedPhonesResponse.json();
+      assert.equal(flaggedPhonesResponse.status, 200);
+      assert.ok(
+        flaggedPhonesBody.phones.some((item) => item.phone === "29876543")
+      );
+      const preservedFlag = flaggedPhonesBody.phones.find(
+        (item) => item.phone === "29876543"
+      );
+      assert.equal(preservedFlag.reason, "refus");
+      assert.equal(preservedFlag.note, "Note initiale");
+      assert.ok(
+        flaggedPhonesBody.phones.some((item) => item.phone === "21111111")
+      );
+
+      const navexImport = (text, stateRaw = "En attente") =>
+        fetchTest(`${baseUrl}/api/admin/navex/import`, {
+          method: "POST",
+          headers: {
+            Authorization: adminAuthorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text, stateRaw }),
+        });
+      const tooManyParcels = await navexImport(
+        Array.from(
+          { length: 1001 },
+          (_, index) => `${String(300000000000 + index)} 21234567`
+        ).join("\n")
+      );
+      assert.equal(tooManyParcels.status, 400);
+      assert.equal((await tooManyParcels.json()).error, "too_many");
+
+      await db.execute({
+        sql: `INSERT INTO navex_parcels
+          (code, phone, state, state_raw, order_id)
+          VALUES ('999999999999', '21234567', 'pending', 'En attente', 42)`,
+      });
+      const importedParcels = [
+        "999999999999 21234567",
+        ...Array.from(
+          { length: 100 },
+          (_, index) => `${String(310000000000 + index)} 21234567`
+        ),
+      ];
+      const importedResponse = await navexImport(importedParcels.join("\n"));
+      assert.equal(importedResponse.status, 200);
+      const importedBody = await importedResponse.json();
+      assert.equal(importedBody.imported, 101);
+      assert.equal(importedBody.notFound, 0);
+      const preservedOrder = await db.execute(
+        "SELECT order_id FROM navex_parcels WHERE code = '999999999999'"
+      );
+      assert.equal(Number(preservedOrder.rows[0].order_id), 42);
+      const importedCount = await db.execute(
+        "SELECT COUNT(*) AS count FROM navex_parcels WHERE phone = '21234567'"
+      );
+      assert.equal(Number(importedCount.rows[0].count), 101);
+
+      const motifImport = await navexImport(
+        "321321321321 21234567 RTN Client disponible demain",
+        "RTN dépôt"
+      );
+      assert.equal(motifImport.status, 200);
+      const motifReimport = await navexImport(
+        "321321321321 21234567 RTN",
+        "RTN dépôt"
+      );
+      assert.equal(motifReimport.status, 200);
+      const importedMotif = await db.execute({
+        sql: "SELECT motif FROM navex_parcels WHERE code = ?",
+        args: ["321321321321"],
+      });
+      assert.equal(importedMotif.rows[0].motif, "Client disponible demain");
+
+      await db.execute(`
+        CREATE TRIGGER reject_second_navex_batch
+        BEFORE INSERT ON navex_parcels
+        WHEN NEW.code = '410000000100'
+        BEGIN
+          SELECT RAISE(FAIL, 'synthetic batch failure');
+        END
+      `);
+      const failedBatchResponse = await navexImport(
+        Array.from(
+          { length: 101 },
+          (_, index) => `${String(410000000000 + index)} 29876543`
+        ).join("\n")
+      );
+      assert.equal(failedBatchResponse.status, 500);
+      assert.deepEqual(await failedBatchResponse.json(), {
+        error: "navex_import_failed",
+        batchesWritten: 1,
+      });
+      await db.execute("DROP TRIGGER reject_second_navex_batch");
 
       const postOrder = async (phone, items, phone2 = phone, name = "Synthetic Buyer") => {
         const response = await fetchTest(`${baseUrl}/api/orders`, {

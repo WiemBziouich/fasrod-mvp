@@ -10,9 +10,20 @@ import { isDuplicateReviewSchemaMissing } from "@/lib/duplicate-review-errors.mj
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { validateOrderInput } from "@/lib/order-input";
 import { formatOrderDesignation } from "@/lib/order-designation.mjs";
+import { getCustomerHistory } from "@/lib/customer-history";
+import { EXPORTED_ORDER_REVIEW_DAYS } from "@/lib/risk-config";
+import { decideCustomerReview } from "@/lib/customer-risk.mjs";
+import { createReviewReasonColumnCache } from "@/lib/review-reason-column.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const hasReviewReasonColumn = createReviewReasonColumnCache(async () => {
+  const columns = await db.execute("PRAGMA table_info(orders)");
+  return columns.rows.some(
+    (column) => String(column.name) === "review_reason"
+  );
+});
 
 export async function POST(req: NextRequest) {
   const ip =
@@ -70,6 +81,22 @@ export async function POST(req: NextRequest) {
       { status: 503 }
     );
   }
+
+  let customerHistory = {
+    orders: [],
+    parcels: [],
+    flaggedPhones: [],
+    openParcelCount: 0,
+    recentReturns: [],
+    deliveredParcels: [],
+  } as Awaited<ReturnType<typeof getCustomerHistory>>;
+  try {
+    customerHistory = await getCustomerHistory([phone, phone2]);
+  } catch {
+    // History is best-effort: a history read must never block order creation.
+  }
+
+  const supportsReviewReason = await hasReviewReasonColumn();
 
   try {
     const tx = await db.transaction("write");
@@ -151,6 +178,15 @@ export async function POST(req: NextRequest) {
         qty: item.qty,
       }));
 
+      const identicalBasketOrder = candidateIds
+        .slice()
+        .sort((left, right) => right - left)
+        .find((candidateId) =>
+          basketsMatch(
+            submittedBasket,
+            candidateBaskets.get(candidateId) ?? []
+          )
+        );
       const duplicateOf =
         (recentPhoneDuplicate ? Number(recentPhoneDuplicate.id) : null) ??
         candidateIds
@@ -162,37 +198,79 @@ export async function POST(req: NextRequest) {
             )
           ) ??
         null;
-
-      const duplicateStatus =
-        duplicateOf === null ? "normal" : "pending_review";
+      const hasRecentlyExportedOrder = customerHistory.orders.some((order) => {
+        if (!order.exported_at) return false;
+        const exportedAt = Date.parse(order.exported_at.replace(" ", "T"));
+        return Number.isFinite(exportedAt) &&
+          exportedAt <= Date.now() &&
+          exportedAt >= Date.now() -
+            EXPORTED_ORDER_REVIEW_DAYS * 24 * 60 * 60 * 1000;
+      });
+      const decision = decideCustomerReview({
+        sameBasket: Boolean(identicalBasketOrder),
+        recentPhone: Boolean(recentPhoneDuplicate),
+        recentExport: hasRecentlyExportedOrder,
+        openParcel: customerHistory.openParcelCount > 0,
+        recentReturn: customerHistory.recentReturns.length > 0,
+        flaggedPhone: customerHistory.flaggedPhones.length > 0,
+      });
+      const reviewReason = decision.reason;
+      const duplicateStatus = decision.duplicateStatus;
 
       const first = items[0];
 
-      const result = await tx.execute({
-        sql: `
+      const result = supportsReviewReason
+        ? await tx.execute({
+            sql: `
+          INSERT INTO orders (
+            name, address, city, governorate, phone, phone2,
+            product_id, designation, qty, item_price, delivery_fee, total,
+            duplicate_status, duplicate_of, review_reason
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+            args: [
+              name,
+              address,
+              city,
+              governorate,
+              phone,
+              phone2,
+              first.productId,
+              designation,
+              items.reduce((sum, item) => sum + item.qty, 0),
+              subtotal,
+              DELIVERY_FEE,
+              total,
+              duplicateStatus,
+              duplicateOf,
+              reviewReason,
+            ],
+          })
+        : await tx.execute({
+            sql: `
           INSERT INTO orders (
             name, address, city, governorate, phone, phone2,
             product_id, designation, qty, item_price, delivery_fee, total,
             duplicate_status, duplicate_of
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
-        args: [
-          name,
-          address,
-          city,
-          governorate,
-          phone,
-          phone2,
-          first.productId,
-          designation,
-          items.reduce((sum, item) => sum + item.qty, 0),
-          subtotal,
-          DELIVERY_FEE,
-          total,
-          duplicateStatus,
-          duplicateOf,
-        ],
-      });
+            args: [
+              name,
+              address,
+              city,
+              governorate,
+              phone,
+              phone2,
+              first.productId,
+              designation,
+              items.reduce((sum, item) => sum + item.qty, 0),
+              subtotal,
+              DELIVERY_FEE,
+              total,
+              duplicateStatus,
+              duplicateOf,
+            ],
+          });
 
       const orderId = Number(result.lastInsertRowid);
 

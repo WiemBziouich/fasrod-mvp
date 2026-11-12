@@ -13,6 +13,17 @@ import {
   type OrderStatus,
 } from "@/lib/duplicate-orders.mjs";
 import { getProducts } from "@/lib/products";
+import {
+  getCustomerHistory,
+  type CustomerHistory,
+} from "@/lib/customer-history";
+import {
+  EXPORTED_ORDER_REVIEW_DAYS,
+  IGNORED_PARCEL_MOTIF,
+  OPEN_PARCEL_REVIEW_DAYS,
+  OPEN_PARCEL_STATES,
+} from "@/lib/risk-config";
+import { isOpenParcelRisk } from "@/lib/customer-risk.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -59,6 +70,18 @@ function isMissingExportBatchSchema(error: unknown) {
 }
 
 export default async function AdminOrdersPage() {
+  let hasReviewReason = false;
+  try {
+    const orderColumns = await db.execute("PRAGMA table_info(orders)");
+    hasReviewReason = orderColumns.rows.some(
+      (column) => String(column.name) === "review_reason"
+    );
+  } catch {
+    hasReviewReason = false;
+  }
+  const reviewReasonColumn = hasReviewReason
+    ? "review_reason"
+    : "'' AS review_reason";
   const [
     result,
     reviewResult,
@@ -68,7 +91,7 @@ export default async function AdminOrdersPage() {
   ] = await Promise.all([
     db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 200"),
     db.execute(`
-      SELECT id, created_at, name, phone, phone2, duplicate_of
+      SELECT id, created_at, name, phone, phone2, duplicate_of, ${reviewReasonColumn}
       FROM orders
       WHERE duplicate_status = 'pending_review'
       ORDER BY created_at DESC, id DESC
@@ -176,8 +199,68 @@ export default async function AdminOrdersPage() {
       phone: String(value.phone ?? ""),
       phone2: String(value.phone2 ?? ""),
       duplicate_of: value.duplicate_of == null ? null : Number(value.duplicate_of),
+      review_reason: String(value.review_reason ?? ""),
     };
   });
+  const reviewDetails = await Promise.all(
+    reviewOrders.map(async (order, index) => {
+      if (index >= 20) return {} as Record<string, string>;
+      const details: Record<string, string> = {};
+      const reasons = order.review_reason
+        .split(",")
+        .map((reason) => reason.trim())
+        .filter(Boolean);
+      let history: CustomerHistory | null = null;
+      try {
+        history = await getCustomerHistory([order.phone, order.phone2]);
+      } catch {
+        history = null;
+      }
+
+      for (const reason of reasons) {
+        const relatedOrder = history?.orders.find(
+          (item) => item.id === order.duplicate_of
+        );
+        if (reason === "same_basket" || reason === "recent_phone") {
+          details[reason] = relatedOrder
+            ? `Commande #${relatedOrder.id} · ${relatedOrder.date} · ${order.phone}`
+            : `Téléphone ${order.phone} · commande ${order.created_at}`;
+        } else if (reason === "flagged_phone") {
+          const flag = history?.flaggedPhones[0];
+          details[reason] = flag
+            ? `Téléphone ${flag.phone} · signalé le ${flag.created_at}`
+            : `Téléphone ${order.phone} · commande ${order.created_at}`;
+        } else if (reason === "previous_return") {
+          const parcel = history?.recentReturns[0];
+          details[reason] = parcel
+            ? `Colis ${parcel.code} · ${parcel.date ?? "date inconnue"} · ${order.phone}`
+            : `Téléphone ${order.phone} · commande ${order.created_at}`;
+        } else if (reason === "open_parcel") {
+          const parcel = history?.parcels.find((item) =>
+            isOpenParcelRisk(item, {
+              openStates: OPEN_PARCEL_STATES,
+              ignoredMotif: IGNORED_PARCEL_MOTIF,
+              days: OPEN_PARCEL_REVIEW_DAYS,
+            })
+          );
+          const exportedOrder = history?.orders.find((item) => {
+            if (!item.exported_at) return false;
+            const timestamp = Date.parse(item.exported_at.replace(" ", "T"));
+            return Number.isFinite(timestamp) &&
+              timestamp <= Date.now() &&
+              timestamp >=
+                Date.now() - EXPORTED_ORDER_REVIEW_DAYS * 24 * 60 * 60 * 1000;
+          });
+          details[reason] = parcel
+            ? `Colis ${parcel.code} · ${parcel.date ?? "date inconnue"} · ${order.phone}`
+            : exportedOrder
+              ? `Commande #${exportedOrder.id} · exportée le ${exportedOrder.exported_at} · ${order.phone}`
+              : `Téléphone ${order.phone} · commande ${order.created_at}`;
+        }
+      }
+      return details;
+    })
+  );
   const comparedOrderIds = Array.from(
     new Set(
       reviewOrders.flatMap((order) =>
@@ -239,7 +322,7 @@ export default async function AdminOrdersPage() {
       }
     }
   }
-  const pendingReviewOrders = reviewOrders.map((order) => {
+  const pendingReviewOrders = reviewOrders.map((order, index) => {
     const comparedOrder = comparedOrders.get(order.id);
     const candidate =
       order.duplicate_of === null
@@ -254,6 +337,7 @@ export default async function AdminOrdersPage() {
 
     return {
       ...order,
+      review_details: reviewDetails[index],
       items: comparedOrder?.items ?? [],
       candidate,
       phoneMatch: orderPhones.some((phone) => candidatePhones.includes(phone)),
