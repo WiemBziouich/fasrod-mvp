@@ -218,6 +218,24 @@ node --env-file=.env.local .\scripts\navex-discover-states.mjs .\codes-navex.txt
 Le rapport n'affiche que les états distincts et leurs nombres, jamais les codes ou les
 informations de livreur. N'utiliser que la cible `https://app.navex.tn`.
 
+## Fondation de gestion centralisée des commandes
+La migration versionnée `scripts/migrate-central-order-management.mjs` ajoute le registre
+`schema_migrations`, les tables `customers`, `customer_phones` et `order_activity`, ainsi que
+`orders.customer_id` et `orders.source`. Elle est additive et ne s'exécute pas au démarrage ni
+au build. Les anciennes commandes restent sans client (`customer_id = NULL`) et reçoivent
+`source = 'legacy_unknown'`; aucune identité ou source n'est déduite des numéros de téléphone.
+Les clés étrangères sont activées et vérifiées pendant l'exécution de la migration.
+
+Après sauvegarde, appliquer uniquement à une base SQLite locale existante explicitement ciblée :
+
+```powershell
+node .\scripts\migrate-central-order-management.mjs --database .\data\orders.db
+```
+
+Le script exige ce chemin explicite, refuse les URL distantes et les liens symboliques. Cette
+phase n'ajoute pas le schéma initial des commandes : une base vide sans table `orders` n'est pas
+une cible valide. Ne pas exécuter la migration sur une base Turso ou de production.
+
 ## Langues
 `components/I18n.tsx` : FR (avec touches tounsi) et AR (écriture arabe, RTL). Faire relire les textes par la cible.
 
