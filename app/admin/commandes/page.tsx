@@ -1,6 +1,7 @@
 import db from "@/lib/db";
 import AdminOrdersTable from "@/components/AdminOrdersTable";
 import AdminNav from "@/components/AdminNav";
+import NavexSyncPanel from "@/components/NavexSyncPanel";
 import OldExportedOrdersCleanup from "@/components/OldExportedOrdersCleanup";
 import ExportCsvButton from "@/components/ExportCsvButton";
 import ExportBatchesPanel from "@/components/ExportBatchesPanel";
@@ -493,6 +494,8 @@ export default async function AdminOrdersPage() {
       </p>
 
       <ExportBatchesPanel batches={batches} />
+
+      <NavexSyncPanel />
 
       <OldExportedOrdersCleanup count={oldExportedCount} />
 

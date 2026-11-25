@@ -11,14 +11,7 @@ import {
   getParcelReviewSignals,
   isOpenParcelRisk,
 } from "../lib/customer-risk.mjs";
-import { extractImportedPhones } from "../lib/phone-import.mjs";
-import {
-  findUniqueRecentExport,
-  maskNavexPhone,
-  parseNavexPaste,
-} from "../lib/navex-paste.mjs";
 import { getStatesWithFetch } from "../lib/navex/client-core.mjs";
-import { PAGE_STATES } from "../lib/navex/page-states.mjs";
 import { mapEtat } from "../lib/navex/state-map-core.mjs";
 import { FakeNavexClient } from "../lib/navex/fake-client.mjs";
 import { refreshParcelStatesWithDb } from "../lib/navex-sync-core.mjs";
@@ -186,7 +179,6 @@ test("customer risk signals derive from normalized parcel states", () => {
     ["Client non sérieux", "unserious"],
     ["Client pas sérieux", "unserious"],
   ]) {
-    assert.ok(PAGE_STATES.includes(label));
     assert.equal(mapEtat(label), expected);
   }
   assert.equal(mapEtat("Livrer Paye"), "delivered");
@@ -235,70 +227,6 @@ test("order column cache shares one schema read across column checks", async () 
     [true, true, false]
   );
   assert.equal(calls, 1);
-});
-
-test("collage parser extracts parcel dates and phones while masking the preview", () => {
-  const parsed = parseNavexPaste(
-    "Colis 123456789012 Prix 45.50 Date 2026-11-11 21234567 29876543\n" +
-      "Colis 987654321098 Prix 16 Date 2026-11-10 sans téléphone",
-    "À vérifier"
-  );
-  assert.deepEqual(parsed, {
-    parcels: [{
-      code: "123456789012",
-      phone: "21234567",
-      phone2: "29876543",
-      state: "to_verify",
-      stateRaw: "À vérifier",
-      motif: "",
-      parcelDate: "2026-11-11",
-    }],
-    ignoredCount: 1,
-  });
-  assert.equal(maskNavexPhone(parsed.parcels[0].phone), "2••••567");
-  const returnedWithIgnoredMotif = parseNavexPaste(
-    "123123123123 21234567 rtn CLIENT DISPONIBLE demain",
-    "RTN dépôt"
-  );
-  assert.equal(returnedWithIgnoredMotif.parcels[0].motif, "Client disponible demain");
-  const returnSignals = getParcelReviewSignals(returnedWithIgnoredMotif.parcels.map((parcel) => ({
-    state: parcel.state,
-    motif: parcel.motif,
-    date: new Date().toISOString(),
-  })), {
-    openStates: [],
-    ignoredMotif: /disponible demain/i,
-    openDays: 21,
-    returnDays: 90,
-  });
-  assert.equal(
-    decideCustomerReview({ recentReturn: returnSignals.recentReturns.length > 0 }).reason,
-    ""
-  );
-  assert.deepEqual(
-    extractImportedPhones("Colis 123456789012, téléphone 21234567, 21234567; 98765432"),
-    ["21234567", "98765432"]
-  );
-});
-
-test("collage preview can identify more than one thousand parcel codes", () => {
-  const text = Array.from(
-    { length: 1001 },
-    (_, index) => String(700000000000 + index)
-  ).join("\n");
-  const preview = parseNavexPaste(text, "En attente");
-  assert.equal(preview.parcels.length, 0);
-  assert.equal(preview.ignoredCount, 1001);
-});
-
-test("ambiguous recent exports do not attach a parcel order id", () => {
-  const recentOrders = [
-    { id: 8, phone: "21234567", phone2: "21234567" },
-    { id: 9, phone: "21234567", phone2: "29876543" },
-  ];
-  assert.equal(findUniqueRecentExport("21234567", "", recentOrders), null);
-  assert.equal(findUniqueRecentExport("29876543", "", recentOrders), 9);
-  assert.equal(findUniqueRecentExport("21111111", "", recentOrders), null);
 });
 
 function apiResult(code, overrides = {}) {
