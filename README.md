@@ -180,7 +180,7 @@ de migration initiale, ainsi que les frais (`DELIVERY_FEE`) et la quantité max 
 Mettre les photos dans `public/products/` (remplacer les `.svg` provisoires).
 Les 24 gouvernorats utilisent l'orthographe exacte de Navex.
 
-## Mémoire clients et Navex
+## Schéma historique de mémoire client et synchronisation Navex
 Avant de déployer le code de mémoire client, exécuter toutes les instructions de
 `scripts/migrate-customer-memory.sql` séparément dans la console SQL de Turso, après la migration
 de revue des doublons qui crée `order_review_history`. Elles ajoutent
@@ -193,21 +193,20 @@ Pour une base SQLite locale existante, arrêter l'application puis lancer
 `node .\scripts\migrate-customer-memory.mjs` depuis la racine. Le script ne charge aucun
 fichier `.env`, refuse les URL distantes et peut être relancé sans dommage.
 
-L'administration `/admin/clients` permet de rechercher l'historique par téléphone, gérer les
-numéros à risque et importer un tableau Navex. Dans la zone d'import, coller le texte d'une page
-de suivi, sélectionner l'état de cette page, vérifier le nombre de colis trouvés/ignorés et les
-téléphones masqués, puis choisir « Importer et synchroniser ». Seuls les codes, téléphones et
-états nécessaires sont stockés; noms et adresses ne sont jamais conservés. Les états comme
-« À enlever » et « Enlevés » sont classés en attente; les libellés contenant « sérieux » sont
-classés « Client non sérieux » et comptent comme retours récents. Une synchronisation met à jour
-au plus 100 colis par exécution et s'interrompt après 40 secondes, par requêtes de suivi de
-20 codes maximum.
+La page et l'API d'historique client, la gestion des numéros à risque et l'import Navex par
+collage ne sont plus disponibles. Cette phase ne supprime ni les tables ni leurs données:
+les lectures historiques nécessaires au flux existant de création et de revue des commandes
+restent en place jusqu'à leur remplacement.
+
+La synchronisation Navex existante reste accessible depuis `/admin/commandes`; elle peut aussi
+être appelée par `/api/cron/navex-sync`. Elle met à jour jusqu'à 100 colis par exécution, en
+requêtes de suivi de 20 codes maximum. Cette synchronisation est conservée séparément de l'ancien
+import par collage et sera remplacée ou complétée dans une phase ultérieure.
 
 Configurer `NAVEX_READ_TOKEN` (jeton complet du chemin API Navex) pour la lecture réelle et
 `CRON_SECRET` pour `/api/cron/navex-sync`; le cron reçoit ce secret dans `x-cron-secret` ou
 `Authorization: Bearer`. Ne jamais inscrire les valeurs des secrets dans le dépôt, les journaux
-ou la documentation. Sans `NAVEX_READ_TOKEN`, la synchronisation est ignorée et les états
-importés par collage restent disponibles.
+ou la documentation. Sans `NAVEX_READ_TOKEN`, la synchronisation est ignorée.
 
 Pour découvrir les libellés de statut renvoyés par Navex, préparer un fichier texte local
 contenant un code colis par ligne (100 maximum), puis exécuter :
